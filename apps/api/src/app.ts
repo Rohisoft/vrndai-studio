@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Db } from 'mongodb';
 import type { Env } from './config/env.js';
@@ -27,6 +28,11 @@ import { registerVideoRoutes } from './routes/videos.js';
 export interface AppDeps {
   env: Env;
   db: Db;
+  // Path to the built frontend (apps/web/dist) -- only set in single-
+  // service deployments (Render) where this API also serves the SPA.
+  // Local dev runs the Vite dev server separately, so this is undefined
+  // there (see index.ts).
+  webDistDir?: string;
   comfyClient: ComfyClient;
   llmClient: LlmClient;
   jobStore: JobStore;
@@ -62,6 +68,23 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerJobsRoutes(app, deps);
   registerJobsStreamRoute(app, deps);
   registerVideoRoutes(app, deps);
+
+  // Single-service deployment (Render): this API also serves the built
+  // React SPA. /api/* keeps returning JSON 404s as before; every other
+  // unmatched GET falls back to index.html so React Router's client-side
+  // routes (e.g. /gallery, /history) work on a hard refresh or direct link,
+  // not just via in-app navigation.
+  if (deps.webDistDir) {
+    await app.register(fastifyStatic, { root: deps.webDistDir });
+
+    app.setNotFoundHandler((request, reply) => {
+      if (request.raw.url?.startsWith('/api/')) {
+        reply.status(404).send({ error: 'NotFound', message: `Route ${request.method}:${request.raw.url} not found.` });
+        return;
+      }
+      reply.type('text/html').sendFile('index.html');
+    });
+  }
 
   return app;
 }

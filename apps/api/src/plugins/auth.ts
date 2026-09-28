@@ -10,11 +10,15 @@ import { verifyLogin } from '../auth/users.js';
 const COOKIE_NAME = 'auth_token';
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
-// Paths reachable with no login, always -- health checks need to work for
-// monitoring/debugging regardless of auth, and login/status are how the
+// /api/* paths reachable with no login, always -- login/status are how the
 // client establishes a session in the first place (a chicken-and-egg
-// problem if they were gated too).
-const PUBLIC_PATHS = new Set(['/health', '/health/comfyui', '/api/auth/login', '/api/auth/status']);
+// problem if they were gated too). Every non-/api/* path (health checks,
+// and in a single-service deployment, the SPA's static assets + index.html
+// itself) is public too -- the PasswordGate that actually protects the app
+// is client-side JS, so the page and its assets must load before an
+// unauthenticated user can even see a login form. The real protection
+// boundary is /api/*, which every data fetch goes through.
+const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/status']);
 
 function loadOrCreateAuthSecret(dataDir: string): string {
   const secretPath = path.join(dataDir, '.auth-secret');
@@ -41,7 +45,8 @@ export async function registerAuth(app: FastifyInstance, env: Env, db: Db): Prom
   await app.register(cookie, { secret });
 
   app.addHook('onRequest', async (request, reply) => {
-    if (PUBLIC_PATHS.has(request.url.split('?')[0])) {
+    const path = request.url.split('?')[0];
+    if (!path.startsWith('/api/') || PUBLIC_API_PATHS.has(path)) {
       return;
     }
 

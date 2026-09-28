@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -32,6 +33,13 @@ import { createLocalImageCache } from './storage/local-image-cache.js';
 const env = parseEnv();
 const dataDir = path.isAbsolute(env.DATA_DIR) ? env.DATA_DIR : path.join(REPO_ROOT, env.DATA_DIR);
 const workflowsDir = path.join(REPO_ROOT, 'workflows');
+
+// Present only when apps/web has been built into this same image (the
+// single-service production Dockerfile does this; local dev runs Vite's
+// own dev server separately and never builds this directory) -- see
+// app.ts's buildApp() for how this toggles serving the SPA.
+const webDistCandidate = path.join(REPO_ROOT, 'apps/web/dist');
+const webDistDir = fs.existsSync(webDistCandidate) ? webDistCandidate : undefined;
 
 // Job data lives in MongoDB Atlas; DATA_DIR now only holds videos, pending
 // uploads, the settings JSON file, and the auth-cookie signing secret.
@@ -72,6 +80,7 @@ queue.notify();
 const app = await buildApp({
   env,
   db,
+  webDistDir,
   comfyClient,
   llmClient,
   jobStore,
