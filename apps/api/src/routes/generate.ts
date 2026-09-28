@@ -21,7 +21,7 @@ export function registerGenerateRoute(app: FastifyInstance, deps: AppDeps): void
         return;
       }
 
-      const row = deps.jobStore.create({ id: randomUUID(), modelId: request.body.modelId, params: request.body });
+      const row = await deps.jobStore.create({ id: randomUUID(), modelId: request.body.modelId, params: request.body });
       deps.queue.notify();
       return toJobRecord(row);
     }

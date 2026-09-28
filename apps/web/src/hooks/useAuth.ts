@@ -4,6 +4,7 @@ import { api } from '../lib/api-client.js';
 interface AuthStatus {
   passwordRequired: boolean;
   authenticated: boolean;
+  username: string | null;
 }
 
 export function useAuth() {
@@ -25,10 +26,10 @@ export function useAuth() {
   }, [refresh]);
 
   const login = useCallback(
-    async (password: string) => {
+    async (username: string, password: string) => {
       setError(null);
       try {
-        await api.post('/api/auth/login', { password });
+        await api.post('/api/auth/login', { username, password });
         await refresh();
         return true;
       } catch (err) {

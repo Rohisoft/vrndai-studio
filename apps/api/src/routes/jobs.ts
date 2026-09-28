@@ -15,14 +15,14 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
   const server = app.withTypeProvider<ZodTypeProvider>();
 
   server.get('/api/jobs', { schema: { response: { 200: z.array(JobRecordSchema) } } }, async () =>
-    deps.jobStore.list().map(toJobRecord)
+    (await deps.jobStore.list()).map(toJobRecord)
   );
 
   server.get(
     '/api/jobs/:id',
     { schema: { params: z.object({ id: z.string() }), response: { 200: JobRecordSchema, 404: ErrorResponseSchema } } },
     async (request, reply) => {
-      const row = deps.jobStore.getById(request.params.id);
+      const row = await deps.jobStore.getById(request.params.id);
       if (!row) {
         reply.status(404).send({ error: 'NotFound', message: `Job '${request.params.id}' not found.` });
         return;
@@ -35,13 +35,13 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
     '/api/jobs/:id',
     { schema: { params: z.object({ id: z.string() }), response: { 204: z.null() } } },
     async (request, reply) => {
-      const row = deps.jobStore.getById(request.params.id);
+      const row = await deps.jobStore.getById(request.params.id);
       if (row?.videoPath) {
         // deleteVideo internally takes just the basename regardless -- see
         // local-video-storage.ts's path-traversal guard in getVideoPath.
         await deps.videoStorage.deleteVideo(row.videoPath).catch(() => {});
       }
-      deps.jobStore.delete(request.params.id);
+      await deps.jobStore.delete(request.params.id);
       reply.status(204).send();
     }
   );
@@ -50,13 +50,13 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
     '/api/jobs/:id/cancel',
     { schema: { params: z.object({ id: z.string() }), response: { 200: JobRecordSchema, 404: ErrorResponseSchema } } },
     async (request, reply) => {
-      const before = deps.jobStore.getById(request.params.id);
+      const before = await deps.jobStore.getById(request.params.id);
       if (!before) {
         reply.status(404).send({ error: 'NotFound', message: `Job '${request.params.id}' not found.` });
         return;
       }
       await deps.queue.cancel(request.params.id);
-      return toJobRecord(deps.jobStore.getById(request.params.id)!);
+      return toJobRecord((await deps.jobStore.getById(request.params.id))!);
     }
   );
 
@@ -64,12 +64,12 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
     '/api/jobs/:id/rerun',
     { schema: { params: z.object({ id: z.string() }), response: { 200: JobRecordSchema, 404: ErrorResponseSchema } } },
     async (request, reply) => {
-      const source = deps.jobStore.getById(request.params.id);
+      const source = await deps.jobStore.getById(request.params.id);
       if (!source) {
         reply.status(404).send({ error: 'NotFound', message: `Job '${request.params.id}' not found.` });
         return;
       }
-      const row = deps.jobStore.create({
+      const row = await deps.jobStore.create({
         id: randomUUID(),
         modelId: source.modelId,
         params: source.params,
@@ -113,7 +113,7 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
       },
     },
     async (request, reply) => {
-      const source = deps.jobStore.getById(request.params.id);
+      const source = await deps.jobStore.getById(request.params.id);
       if (!source) {
         reply.status(404).send({ error: 'NotFound', message: `Job '${request.params.id}' not found.` });
         return;
@@ -158,7 +158,7 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
       },
     },
     async (request, reply) => {
-      const sources = request.body.jobIds.map((id) => deps.jobStore.getById(id));
+      const sources = await Promise.all(request.body.jobIds.map((id) => deps.jobStore.getById(id)));
       const missingIndex = sources.findIndex((row) => !row || row.status !== 'done' || !row.videoPath);
       if (missingIndex !== -1) {
         reply.status(400).send({
@@ -177,7 +177,7 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
       );
 
       const first = resolved[0];
-      const row = deps.jobStore.create({
+      const row = await deps.jobStore.create({
         id: randomUUID(),
         modelId: 'combined',
         params: {
@@ -188,8 +188,8 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
         },
         combinedFromJobIds: resolved.map((r) => r.id),
       });
-      deps.jobStore.markDone(row.id, outputPath, null);
-      return toJobRecord(deps.jobStore.getById(row.id)!);
+      await deps.jobStore.markDone(row.id, outputPath, null);
+      return toJobRecord((await deps.jobStore.getById(row.id))!);
     }
   );
 }

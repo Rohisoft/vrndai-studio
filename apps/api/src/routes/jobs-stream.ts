@@ -7,7 +7,7 @@ const HEARTBEAT_INTERVAL_MS = 15000;
 export function registerJobsStreamRoute(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>('/api/jobs/:id/events', async (request, reply) => {
     const jobId = request.params.id;
-    const initial = deps.jobStore.getById(jobId);
+    const initial = await deps.jobStore.getById(jobId);
     if (!initial) {
       reply.status(404).send({ error: 'NotFound', message: `Job '${jobId}' not found.` });
       return;

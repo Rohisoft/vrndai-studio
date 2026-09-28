@@ -9,11 +9,11 @@ export interface JobQueue {
   cancel(jobId: string): Promise<void>;
 }
 
-// SQLite is the actual source of truth (see JobStore) -- this is only a wake
-// signal plus a "one job at a time" guard, which is how state "survives
-// what it can" across restarts: on boot, markAllRunningAsFailed() runs
-// before the worker starts, then the worker resumes any remaining queued
-// rows FIFO by created_at.
+// MongoDB is the actual source of truth (see JobStore) -- this is only a
+// wake signal plus a "one job at a time" guard, which is how state
+// "survives what it can" across restarts: on boot, markAllRunningAsFailed()
+// runs before the worker starts, then the worker resumes any remaining
+// queued rows FIFO by created_at.
 export function createJobQueue(workerDeps: WorkerDeps): JobQueue {
   const { jobStore, comfyClient, stockVideoClient } = workerDeps;
   let running = false;
@@ -26,12 +26,12 @@ export function createJobQueue(workerDeps: WorkerDeps): JobQueue {
     running = true;
 
     try {
-      let next = jobStore.getOldestQueued();
+      let next = await jobStore.getOldestQueued();
       while (next) {
         currentJobId = next.id;
         await processJob(next, workerDeps);
         currentJobId = null;
-        next = jobStore.getOldestQueued();
+        next = await jobStore.getOldestQueued();
       }
     } finally {
       running = false;
@@ -43,7 +43,7 @@ export function createJobQueue(workerDeps: WorkerDeps): JobQueue {
   }
 
   async function cancel(jobId: string): Promise<void> {
-    const job = jobStore.getById(jobId);
+    const job = await jobStore.getById(jobId);
     if (!job) {
       return;
     }
@@ -58,14 +58,14 @@ export function createJobQueue(workerDeps: WorkerDeps): JobQueue {
       await client.interrupt(job.comfyPromptId ?? undefined).catch(() => {
         // Best-effort -- even if the interrupt call itself fails, still mark cancelled below.
       });
-      jobStore.markCancelled(jobId);
-      workerDeps.eventBus.publish(jobId, 'error', toJobRecord(jobStore.getById(jobId)!));
+      await jobStore.markCancelled(jobId);
+      workerDeps.eventBus.publish(jobId, 'error', toJobRecord((await jobStore.getById(jobId))!));
       return;
     }
 
     if (job.status === 'queued') {
-      jobStore.markCancelled(jobId);
-      workerDeps.eventBus.publish(jobId, 'error', toJobRecord(jobStore.getById(jobId)!));
+      await jobStore.markCancelled(jobId);
+      workerDeps.eventBus.publish(jobId, 'error', toJobRecord((await jobStore.getById(jobId))!));
     }
   }
 

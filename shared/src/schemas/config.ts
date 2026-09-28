@@ -29,8 +29,8 @@ export const VoiceOptionSchema = z.object({
 export type VoiceOption = z.infer<typeof VoiceOptionSchema>;
 
 // The NON-secret subset of config/app.config.ts served via GET /api/config.
-// Secrets (COMFYUI_AUTH_TOKEN, APP_PASSWORD itself) never appear here --
-// only whether a password is required, not the password.
+// Secrets (COMFYUI_AUTH_TOKEN, admin credentials) never appear here -- only
+// whether login is required, not any credential itself.
 export const PublicAppConfigSchema = z.object({
   appName: z.string(),
   allowedDurationsSeconds: z.array(z.number().positive()).min(1),

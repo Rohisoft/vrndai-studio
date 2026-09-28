@@ -12,7 +12,21 @@ const EnvSchema = z.object({
   COMFYUI_BASE_URL: z.string().url().default('http://127.0.0.1:8188'),
   COMFYUI_AUTH_TOKEN: z.string().optional(),
   COMFYUI_MOCK: booleanFromEnv,
-  APP_PASSWORD: z.string().optional(),
+  // Job storage -- MongoDB Atlas, required (no localhost default; this app
+  // no longer runs a local database at all). Plain non-empty string rather
+  // than .url() -- Atlas's mongodb+srv:// connection strings are fine
+  // either way, but this avoids any edge case with the WHATWG URL parser
+  // and unusual connection-string formats; a malformed value still fails
+  // fast, just via the driver's own connection error instead.
+  MONGODB_URI: z.string().min(1),
+  // Super-admin account -- only used to seed the one admin user in MongoDB
+  // on first boot (see auth/users.ts's seedSuperAdminIfNeeded()). Ignored
+  // on every later boot once that user exists, so leaving these set in
+  // .env permanently doesn't reset the account. Optional in the schema
+  // itself since they're only truly required the very first time -- the
+  // seeding function enforces that, not this parse step.
+  ADMIN_USERNAME: z.string().optional(),
+  ADMIN_PASSWORD: z.string().optional(),
   // RunPod Serverless (alternative to COMFYUI_BASE_URL's Pod-based
   // transport) -- when RUNPOD_API_KEY is set, createComfyClient() uses it
   // instead. RUNPOD_ENDPOINT_IDS is a JSON object string mapping each

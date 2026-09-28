@@ -52,8 +52,8 @@ function loadWorkflow(workflowsDir: string, filename: string): unknown {
   return raw;
 }
 
-function publish(deps: WorkerDeps, jobId: string, type: 'status' | 'progress' | 'done' | 'error'): void {
-  const row = deps.jobStore.getById(jobId);
+async function publish(deps: WorkerDeps, jobId: string, type: 'status' | 'progress' | 'done' | 'error'): Promise<void> {
+  const row = await deps.jobStore.getById(jobId);
   if (row) {
     deps.eventBus.publish(jobId, type, toJobRecord(row));
   }
@@ -62,18 +62,18 @@ function publish(deps: WorkerDeps, jobId: string, type: 'status' | 'progress' | 
 export async function processJob(jobRow: JobRow, deps: WorkerDeps): Promise<void> {
   const modelConfig = getModelConfig(jobRow.modelId);
   if (!modelConfig) {
-    deps.jobStore.markFailed(jobRow.id, `Unknown model '${jobRow.modelId}'.`);
-    publish(deps, jobRow.id, 'error');
+    await deps.jobStore.markFailed(jobRow.id, `Unknown model '${jobRow.modelId}'.`);
+    await publish(deps, jobRow.id, 'error');
     return;
   }
 
-  const started = deps.jobStore.markRunning(jobRow.id);
+  const started = await deps.jobStore.markRunning(jobRow.id);
   if (!started) {
     // Cancelled (or otherwise moved off 'queued') between being picked up
     // and this call -- nothing to run.
     return;
   }
-  publish(deps, jobRow.id, 'status');
+  await publish(deps, jobRow.id, 'status');
 
   const settings = deps.appSettingsStore.load();
   let unsubscribeProgress: (() => void) | null = null;
@@ -128,12 +128,18 @@ export async function processJob(jobRow: JobRow, deps: WorkerDeps): Promise<void
     }
 
     const { promptId } = await client.submitWorkflow(graph, { images, modelId: jobRow.modelId });
-    deps.jobStore.setComfyPromptId(jobRow.id, promptId);
+    await deps.jobStore.setComfyPromptId(jobRow.id, promptId);
 
     unsubscribeProgress = client.onProgress(promptId, (progress) => {
       const percent = progress.max > 0 ? Math.round((progress.value / progress.max) * 100) : 0;
-      deps.jobStore.updateProgress(jobRow.id, percent);
-      publish(deps, jobRow.id, 'progress');
+      // Best-effort, fire-and-forget -- onProgress's callback type is
+      // synchronous (`() => void`), and a dropped progress update should
+      // never take down the job, so failures here are swallowed rather
+      // than propagated.
+      void (async () => {
+        await deps.jobStore.updateProgress(jobRow.id, percent);
+        await publish(deps, jobRow.id, 'progress');
+      })().catch(() => {});
     });
 
     const result = await client.waitForCompletion(promptId, { timeoutMs: settings.jobTimeoutMs });
@@ -142,7 +148,7 @@ export async function processJob(jobRow: JobRow, deps: WorkerDeps): Promise<void
 
     // The job may have been cancelled by a separate request while we were
     // awaiting completion -- don't clobber that terminal state.
-    const current = deps.jobStore.getById(jobRow.id);
+    const current = await deps.jobStore.getById(jobRow.id);
     if (!current || current.status !== 'running') {
       return;
     }
@@ -153,24 +159,24 @@ export async function processJob(jobRow: JobRow, deps: WorkerDeps): Promise<void
 
     const bytes = await client.fetchOutputBytes(result.outputs[0]);
     const videoPath = await deps.videoStorage.saveVideo(jobRow.id, bytes);
-    deps.jobStore.markDone(jobRow.id, videoPath, null);
-    publish(deps, jobRow.id, 'done');
+    await deps.jobStore.markDone(jobRow.id, videoPath, null);
+    await publish(deps, jobRow.id, 'done');
   } catch (err) {
     unsubscribeProgress?.();
-    const current = deps.jobStore.getById(jobRow.id);
+    const current = await deps.jobStore.getById(jobRow.id);
     if (!current || current.status !== 'running') {
       return; // already cancelled elsewhere
     }
 
     const message = err instanceof Error ? err.message : String(err);
-    const retryCount = deps.jobStore.incrementRetryCount(jobRow.id);
+    const retryCount = await deps.jobStore.incrementRetryCount(jobRow.id);
 
     if (retryCount <= settings.maxRetries) {
-      deps.jobStore.requeue(jobRow.id);
-      publish(deps, jobRow.id, 'status');
+      await deps.jobStore.requeue(jobRow.id);
+      await publish(deps, jobRow.id, 'status');
     } else {
-      deps.jobStore.markFailed(jobRow.id, message);
-      publish(deps, jobRow.id, 'error');
+      await deps.jobStore.markFailed(jobRow.id, message);
+      await publish(deps, jobRow.id, 'error');
     }
   }
 }

@@ -23,8 +23,9 @@ import type { WorkerDeps } from './queue/worker.js';
 import { createAppSettingsStore } from './settings/app-settings-store.js';
 import { createEnvSettingsStore } from './settings/env-settings-store.js';
 import { createJobEventBus } from './sse/job-events.js';
-import { openDatabase } from './store/db.js';
-import { createSqliteJobStore } from './store/sqlite-job-store.js';
+import { connectMongo } from './store/mongo-client.js';
+import { createMongoJobStore } from './store/mongo-job-store.js';
+import { seedSuperAdminIfNeeded } from './auth/users.js';
 import { createLocalVideoStorage } from './storage/local-video-storage.js';
 import { createLocalImageCache } from './storage/local-image-cache.js';
 
@@ -32,8 +33,11 @@ const env = parseEnv();
 const dataDir = path.isAbsolute(env.DATA_DIR) ? env.DATA_DIR : path.join(REPO_ROOT, env.DATA_DIR);
 const workflowsDir = path.join(REPO_ROOT, 'workflows');
 
-const db = openDatabase(dataDir);
-const jobStore = createSqliteJobStore(db);
+// Job data lives in MongoDB Atlas; DATA_DIR now only holds videos, pending
+// uploads, the settings JSON file, and the auth-cookie signing secret.
+const db = await connectMongo(env.MONGODB_URI);
+await seedSuperAdminIfNeeded(db, env);
+const jobStore = await createMongoJobStore(db);
 const videoStorage = createLocalVideoStorage(path.join(dataDir, 'videos'));
 const imageCache = createLocalImageCache(path.join(dataDir, 'pending-uploads'));
 const eventBus = createJobEventBus();
@@ -61,12 +65,13 @@ const queue = createJobQueue(workerDeps);
 // Crash recovery: anything still "running" when the process last stopped
 // didn't actually finish -- mark it failed before the worker resumes
 // whatever's left in "queued".
-jobStore.markAllRunningAsFailed();
+await jobStore.markAllRunningAsFailed();
 await runCleanup({ jobStore, videoStorage, imageCache, appSettingsStore });
 queue.notify();
 
 const app = await buildApp({
   env,
+  db,
   comfyClient,
   llmClient,
   jobStore,

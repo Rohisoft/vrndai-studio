@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { Db } from 'mongodb';
 import type { Env } from './config/env.js';
 import type { ComfyClient } from './comfy/types.js';
 import type { LlmClient } from './llm/types.js';
@@ -25,6 +26,7 @@ import { registerVideoRoutes } from './routes/videos.js';
 
 export interface AppDeps {
   env: Env;
+  db: Db;
   comfyClient: ComfyClient;
   llmClient: LlmClient;
   jobStore: JobStore;
@@ -49,7 +51,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
 
   registerErrorHandler(app);
-  await registerAuth(app, deps.env);
+  await registerAuth(app, deps.env, deps.db);
 
   registerHealthRoutes(app, deps);
   registerConfigRoutes(app, deps);

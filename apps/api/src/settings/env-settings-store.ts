@@ -20,7 +20,6 @@ export function createEnvSettingsStore(currentEnv: Env) {
       comfyuiBaseUrl: currentEnv.COMFYUI_BASE_URL,
       comfyuiAuthTokenSet: Boolean(currentEnv.COMFYUI_AUTH_TOKEN),
       comfyuiMock: currentEnv.COMFYUI_MOCK,
-      appPasswordSet: Boolean(currentEnv.APP_PASSWORD),
       port: currentEnv.PORT,
       dataDir: currentEnv.DATA_DIR,
     };
@@ -35,12 +34,11 @@ export function createEnvSettingsStore(currentEnv: Env) {
       // Field present (including '' from an explicit "clear") -> use it.
       COMFYUI_AUTH_TOKEN: input.comfyuiAuthToken ?? existing.COMFYUI_AUTH_TOKEN ?? '',
       COMFYUI_MOCK: String(input.comfyuiMock),
-      APP_PASSWORD: input.appPassword ?? existing.APP_PASSWORD ?? '',
       PORT: String(input.port),
       DATA_DIR: input.dataDir,
       // Not yet exposed in the settings UI (set directly in .env) -- always
       // preserved so an unrelated save from this UI can't silently wipe
-      // RunPod Serverless configuration.
+      // RunPod Serverless / MongoDB / admin / LLM configuration.
       RUNPOD_API_KEY: existing.RUNPOD_API_KEY ?? '',
       RUNPOD_ENDPOINT_IDS: existing.RUNPOD_ENDPOINT_IDS ?? '',
       LLM_PROVIDER: existing.LLM_PROVIDER ?? '',
@@ -51,6 +49,9 @@ export function createEnvSettingsStore(currentEnv: Env) {
       GEMINI_API_KEY: existing.GEMINI_API_KEY ?? '',
       GEMINI_MODEL: existing.GEMINI_MODEL ?? '',
       PEXELS_API_KEY: existing.PEXELS_API_KEY ?? '',
+      MONGODB_URI: existing.MONGODB_URI ?? '',
+      ADMIN_USERNAME: existing.ADMIN_USERNAME ?? '',
+      ADMIN_PASSWORD: existing.ADMIN_PASSWORD ?? '',
     });
   }
 

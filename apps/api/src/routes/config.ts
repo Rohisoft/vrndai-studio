@@ -25,7 +25,10 @@ export function registerConfigRoutes(app: FastifyInstance, deps: AppDeps): void 
         })),
         defaultModelId: settings.defaultModelId,
         imageToVideoEnabled: settings.imageToVideoEnabled,
-        passwordRequired: Boolean(deps.env.APP_PASSWORD),
+        // Login is now always required -- a super-admin account always
+        // exists once seeded (see auth/users.ts), no more "unset = open
+        // access" mode.
+        passwordRequired: true,
         voices,
       };
     }

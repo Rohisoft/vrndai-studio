@@ -37,7 +37,6 @@ export function SettingsPage() {
   const [appDraft, setAppDraft] = useState<AppSettings | null>(null);
   const [envDraft, setEnvDraft] = useState<EnvSettingsInput | null>(null);
   const [comfyuiAuthToken, setComfyuiAuthToken] = useState('');
-  const [appPassword, setAppPassword] = useState('');
   const [savingApp, setSavingApp] = useState(false);
   const [savedApp, setSavedApp] = useState(false);
   const [savingEnv, setSavingEnv] = useState(false);
@@ -97,12 +96,10 @@ export function SettingsPage() {
       // Omit entirely when left blank so the current secret is kept --
       // see EnvSettingsInputSchema's comment on this.
       ...(comfyuiAuthToken ? { comfyuiAuthToken } : {}),
-      ...(appPassword ? { appPassword } : {}),
     });
     setSavingEnv(false);
     if (ok) {
       setComfyuiAuthToken('');
-      setAppPassword('');
       setSavedEnv(true);
     }
   }
@@ -362,15 +359,11 @@ export function SettingsPage() {
             Mock mode (return a sample video instead of calling ComfyUI)
           </label>
 
-          <Field label={`App password ${settings.env.appPasswordSet ? '(currently set)' : '(not set -- app is open)'}`}>
-            <input
-              type="password"
-              value={appPassword}
-              onChange={(event) => setAppPassword(event.target.value)}
-              placeholder="Leave blank to keep current value"
-              className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
-            />
-          </Field>
+          <p className="text-xs text-neutral-500">
+            Login is a single admin account seeded from <code>ADMIN_USERNAME</code>/<code>ADMIN_PASSWORD</code> in{' '}
+            <code>.env</code> on first boot. To change the password, update <code>.env</code> directly and reset the
+            account in MongoDB -- there's no account-management UI yet.
+          </p>
 
           <Field label="Port">
             <input

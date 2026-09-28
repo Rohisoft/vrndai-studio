@@ -25,7 +25,8 @@ export async function runCleanup(deps: CleanupDeps): Promise<void> {
   await deps.imageCache.sweepOlderThan(PENDING_UPLOAD_MAX_AGE_MS);
 
   const settings = deps.appSettingsStore.load();
-  const done = deps.jobStore.list().filter((job) => job.status === 'done' && job.videoPath);
+  const allJobs = await deps.jobStore.list();
+  const done = allJobs.filter((job) => job.status === 'done' && job.videoPath);
 
   const cutoff = Date.now() - settings.autoDeleteAfterDays * 24 * 60 * 60 * 1000;
   const expired = done.filter((job) => job.completedAt && new Date(job.completedAt).getTime() < cutoff);
@@ -43,6 +44,6 @@ export async function runCleanup(deps: CleanupDeps): Promise<void> {
     if (job.videoPath) {
       await deps.videoStorage.deleteVideo(path.basename(job.videoPath)).catch(() => {});
     }
-    deps.jobStore.delete(job.id);
+    await deps.jobStore.delete(job.id);
   }
 }
