@@ -1,0 +1,82 @@
+# Builds a RunPod Serverless worker for LTX-2.5 (both text-to-video and
+# image-to-video -- config/models.config.ts's single 'ltx2.5-t2v' model
+# entry covers both, they just select a different workflow JSON). LTX-2.5's
+# weights are baked in at build time rather than loaded from a network
+# volume, so a cold worker never has to wait on slow network-volume reads --
+# see the migration plan's "Recommended design" section for why.
+#
+# Build (from the repo root, needs Docker BuildKit -- default in modern
+# Docker -- for the --secret flag that keeps the HF token out of the image's
+# layer history):
+#   DOCKER_BUILDKIT=1 docker build \
+#     --secret id=hf_token,env=HUGGINGFACE_TOKEN \
+#     -t <your-registry>/ltx25-comfyui-worker:latest \
+#     -f runpod-worker/Dockerfile.ltx25 runpod-worker
+#   docker push <your-registry>/ltx25-comfyui-worker:latest
+#
+# HUGGINGFACE_TOKEN must be exported in your shell first (LTX-2.5 is gated,
+# same as when we set this up on the Pod originally -- see
+# RUNPOD_RUNBOOK.md section 3, Step 0).
+
+FROM runpod/worker-comfyui:5.10.0-base
+
+WORKDIR /comfyui
+
+# LTX-2.5 custom node pack -- the ONLY custom node pack this model needs,
+# per RUNPOD_RUNBOOK.md section 3 Step 2 (already verified working there;
+# git clone is fine in a Docker build even though it fails on the pod's FUSE
+# network volume, which is why the runbook itself uses a wget/tar workaround
+# instead).
+RUN git clone --depth 1 https://github.com/Lightricks/ComfyUI-LTXVideo.git custom_nodes/ComfyUI-LTXVideo \
+    && pip install -r custom_nodes/ComfyUI-LTXVideo/requirements.txt
+
+# Build-time smoke test -- actually imports the full node graph (including
+# the custom node pack just installed) on CPU, so an import-breaking
+# dependency is caught HERE instead of as a runtime "server not reachable"
+# failure on a live worker. Same pattern the base image itself uses.
+RUN timeout 300 python main.py --quick-test-for-ci --cpu
+
+# LTX-2.5's weight files -- exact filenames and folders verified against
+# this repo's own workflows/ltx2.5-t2v.json and workflows/ltx2.5-i2v.json
+# (both reference the identical 5 files), and already proven correct live
+# on the Pod (RUNPOD_RUNBOOK.md section 3, Step 3). Gated model -- needs an
+# HF token with access to Lightricks/LTX-2.5 accepted.
+RUN mkdir -p models/diffusion_models models/text_encoders models/vae models/latent_upscale_models
+# LTXVideo's requirements.txt only pins a huggingface_hub floor, and the
+# pod hit `hf: command not found` on an older resolved version -- force the
+# upgrade explicitly rather than relying on the resolver (same fix as
+# RUNPOD_RUNBOOK.md's root cause #3).
+RUN pip install -U huggingface_hub
+RUN --mount=type=secret,id=hf_token \
+    HF_TOKEN=$(cat /run/secrets/hf_token) \
+    hf download Lightricks/LTX-2.5 \
+      diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors \
+      latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors \
+      text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors \
+      vae/ltx-2.5-audio-vae-bf16.safetensors \
+      vae/ltx-2.5-video-vae-bf16.safetensors \
+      --local-dir models
+
+# Re-pin huggingface_hub to what transformers actually declared it needs.
+# The earlier `pip install -U huggingface_hub` (still cached above, left
+# unchanged so the ~3 hour weight download layer doesn't get invalidated)
+# force-upgraded past what the base image's pinned transformers version
+# tolerates, which crashed ComfyUI at startup with:
+#   ImportError: huggingface-hub>=1.5.0,<2.0 is required ... but found
+#   huggingface-hub==2.x
+# -- confirmed live via a real failed RunPod job's logs, not guessed. This
+# step runs AFTER the download, as its own fix, specifically so it lands in
+# a new layer instead of touching the cached one.
+RUN pip install "huggingface_hub>=1.5.0,<2.0"
+
+# Re-run the same build-time smoke test as before, now that the version
+# conflict is fixed -- confirms ComfyUI actually starts cleanly before we
+# ship this image again.
+RUN timeout 300 python main.py --quick-test-for-ci --cpu
+
+# Our patched handler.py (see its own header comment for the exact diff
+# against upstream) replaces the stock one baked into the base image.
+WORKDIR /
+COPY handler.py /handler.py
+
+CMD ["/start.sh"]
