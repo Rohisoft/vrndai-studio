@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Content should always shrink/truncate to fit the viewport, never force a
+   page-level horizontal scrollbar -- App.tsx's root div already does this
+   for the app itself, this is a belt-and-suspenders guard at the document
+   level (fixed-position elements like modals aren't contained by that div). */
+html,
+body {
+  overflow-x: hidden;
+}
