@@ -1,0 +1,25 @@
+{
+  "name": "3d-project",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "apps/web",
+    "apps/api",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "typecheck": "tsc --build && tsc --noEmit -p apps/api && tsc --noEmit -p apps/web",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "concurrently": "^9.0.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}
