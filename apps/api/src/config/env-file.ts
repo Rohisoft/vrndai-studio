@@ -23,6 +23,11 @@ const ENV_KEYS = [
   'GEMINI_API_KEY',
   'GEMINI_MODEL',
   'PEXELS_API_KEY',
+  'VIDEO_STORAGE_PROVIDER',
+  'GOOGLE_DRIVE_CLIENT_ID',
+  'GOOGLE_DRIVE_CLIENT_SECRET',
+  'GOOGLE_DRIVE_REFRESH_TOKEN',
+  'GOOGLE_DRIVE_FOLDER_ID',
 ] as const;
 
 export function readEnvFile(envPath: string): Record<string, string> {

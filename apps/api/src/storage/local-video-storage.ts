@@ -7,41 +7,40 @@ import type { VideoStorage } from './video-storage.js';
 export function createLocalVideoStorage(videosDir: string): VideoStorage {
   fs.mkdirSync(videosDir, { recursive: true });
 
-  function getVideoPath(filename: string): string {
-    // Prevent path traversal via a crafted filename (e.g. "../../etc/passwd") --
-    // only the basename is ever honored.
-    return path.join(videosDir, path.basename(filename));
+  // Prevent path traversal via a crafted key (e.g. "../../etc/passwd") --
+  // only the basename is ever honored, regardless of what's stored as
+  // job.videoPath.
+  function resolvePath(key: string): string {
+    return path.join(videosDir, path.basename(key));
   }
 
   async function saveVideo(jobId: string, bytes: Buffer): Promise<string> {
     const filename = `${jobId}-${randomUUID().slice(0, 8)}.mp4`;
-    const filePath = getVideoPath(filename);
+    const filePath = resolvePath(filename);
     await fsp.writeFile(filePath, bytes);
     return filePath;
   }
 
-  async function readVideo(filename: string): Promise<Buffer> {
-    return fsp.readFile(getVideoPath(filename));
+  async function getLocalFile(key: string): Promise<{ path: string; cleanup: () => Promise<void> }> {
+    return { path: resolvePath(key), cleanup: async () => {} };
   }
 
-  function videoExists(filename: string): boolean {
-    return fs.existsSync(getVideoPath(filename));
+  async function getVideoMeta(key: string): Promise<{ sizeBytes: number } | null> {
+    try {
+      const stat = await fsp.stat(resolvePath(key));
+      return { sizeBytes: stat.size };
+    } catch {
+      return null;
+    }
   }
 
-  async function deleteVideo(filename: string): Promise<void> {
-    await fsp.rm(getVideoPath(filename), { force: true });
+  async function streamVideo(key: string, range?: { start: number; end: number }): Promise<NodeJS.ReadableStream> {
+    return fs.createReadStream(resolvePath(key), range);
   }
 
-  async function listVideos(): Promise<{ filename: string; sizeBytes: number; createdAt: Date }[]> {
-    const entries = await fsp.readdir(videosDir);
-    const stats = await Promise.all(
-      entries.map(async (filename) => {
-        const stat = await fsp.stat(getVideoPath(filename));
-        return { filename, sizeBytes: stat.size, createdAt: stat.birthtime };
-      })
-    );
-    return stats;
+  async function deleteVideo(key: string): Promise<void> {
+    await fsp.rm(resolvePath(key), { force: true });
   }
 
-  return { saveVideo, readVideo, getVideoPath, videoExists, deleteVideo, listVideos };
+  return { saveVideo, getLocalFile, getVideoMeta, streamVideo, deleteVideo };
 }

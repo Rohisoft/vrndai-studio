@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { JobRecordSchema } from '@app/shared';
@@ -37,8 +39,6 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
     async (request, reply) => {
       const row = await deps.jobStore.getById(request.params.id);
       if (row?.videoPath) {
-        // deleteVideo internally takes just the basename regardless -- see
-        // local-video-storage.ts's path-traversal guard in getVideoPath.
         await deps.videoStorage.deleteVideo(row.videoPath).catch(() => {});
       }
       await deps.jobStore.delete(request.params.id);
@@ -129,17 +129,25 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
         return;
       }
 
-      const frame = await extractFrame(source.videoPath, request.body?.frameTimeSeconds);
+      // Resolved to a real local file first -- ffmpeg needs one to read
+      // directly, and with the Google Drive storage backend, source.videoPath
+      // is a Drive file id, not a path on this disk.
+      const localSource = await deps.videoStorage.getLocalFile(source.videoPath);
       try {
-        // Cached locally rather than uploaded to ComfyUI right away -- which
-        // ComfyClient ends up doing the actual upload (and when) depends on
-        // the deployment (Pod vs Serverless), decided later in
-        // queue/worker.ts when the user actually submits a new prompt.
-        const name = `continue-${source.id}-${randomUUID().slice(0, 8)}.jpg`;
-        await deps.imageCache.saveImage(name, await fs.readFile(frame.path));
-        return { sourceImage: name, modelId: targetModelId, sourceJobId: source.id };
+        const frame = await extractFrame(localSource.path, request.body?.frameTimeSeconds);
+        try {
+          // Cached locally rather than uploaded to ComfyUI right away -- which
+          // ComfyClient ends up doing the actual upload (and when) depends on
+          // the deployment (Pod vs Serverless), decided later in
+          // queue/worker.ts when the user actually submits a new prompt.
+          const name = `continue-${source.id}-${randomUUID().slice(0, 8)}.jpg`;
+          await deps.imageCache.saveImage(name, await fs.readFile(frame.path));
+          return { sourceImage: name, modelId: targetModelId, sourceJobId: source.id };
+        } finally {
+          await frame.cleanup();
+        }
       } finally {
-        await frame.cleanup();
+        await localSource.cleanup();
       }
     }
   );
@@ -169,27 +177,39 @@ export function registerJobsRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       const resolved = sources as NonNullable<(typeof sources)[number]>[];
 
-      const outputFilename = `${randomUUID()}-combined.mp4`;
-      const outputPath = deps.videoStorage.getVideoPath(outputFilename);
-      await combineVideos(
-        resolved.map((row) => row.videoPath!),
-        outputPath
-      );
+      // ffmpeg needs real local files for both inputs and output --
+      // resolved from storage (a no-op copy for local, a download for
+      // Google Drive) and combined into a local temp file, which is then
+      // handed to storage.saveVideo() as the actual persistence step (same
+      // ingestion path a normal generation's output goes through in
+      // worker.ts, rather than writing straight to a storage-owned path).
+      const localInputs = await Promise.all(resolved.map((row) => deps.videoStorage.getLocalFile(row.videoPath!)));
+      const tempOutputPath = path.join(os.tmpdir(), `combine-${randomUUID()}.mp4`);
+      try {
+        await combineVideos(
+          localInputs.map((input) => input.path),
+          tempOutputPath
+        );
 
-      const first = resolved[0];
-      const row = await deps.jobStore.create({
-        id: randomUUID(),
-        modelId: 'combined',
-        params: {
-          ...first.params,
+        const first = resolved[0];
+        const row = await deps.jobStore.create({
+          id: randomUUID(),
           modelId: 'combined',
-          prompt: `Combined ${resolved.length} clips`,
-          sourceImage: undefined,
-        },
-        combinedFromJobIds: resolved.map((r) => r.id),
-      });
-      await deps.jobStore.markDone(row.id, outputPath, null);
-      return toJobRecord((await deps.jobStore.getById(row.id))!);
+          params: {
+            ...first.params,
+            modelId: 'combined',
+            prompt: `Combined ${resolved.length} clips`,
+            sourceImage: undefined,
+          },
+          combinedFromJobIds: resolved.map((r) => r.id),
+        });
+        const videoPath = await deps.videoStorage.saveVideo(row.id, await fs.readFile(tempOutputPath));
+        await deps.jobStore.markDone(row.id, videoPath, null);
+        return toJobRecord((await deps.jobStore.getById(row.id))!);
+      } finally {
+        await Promise.all(localInputs.map((input) => input.cleanup()));
+        await fs.rm(tempOutputPath, { force: true });
+      }
     }
   );
 }

@@ -59,6 +59,21 @@ const EnvSchema = z.object({
   // here -- the real key lives only in the gitignored .env, same as
   // RUNPOD_API_KEY/COMFYUI_AUTH_TOKEN above.
   PEXELS_API_KEY: z.string().optional(),
+  // Where generated videos are stored -- 'local' writes to DATA_DIR/videos
+  // (fine for local dev / a host with a persistent disk), 'google-drive'
+  // uploads to a Google account's Drive instead, so videos survive on a
+  // host with no persistent disk at all (e.g. Render's free tier). See
+  // storage/google-drive-client.ts for the OAuth flow these four values
+  // come from -- all four are required together when this is 'google-drive'
+  // (enforced where the storage backend is constructed, not by this schema,
+  // same pattern as ADMIN_USERNAME/ADMIN_PASSWORD's conditional need).
+  VIDEO_STORAGE_PROVIDER: z.enum(['local', 'google-drive']).default('local'),
+  GOOGLE_DRIVE_CLIENT_ID: z.string().optional(),
+  GOOGLE_DRIVE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_DRIVE_REFRESH_TOKEN: z.string().optional(),
+  // Optional -- uploads go to this Drive folder's id when set, or the
+  // account's root "My Drive" otherwise.
+  GOOGLE_DRIVE_FOLDER_ID: z.string().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

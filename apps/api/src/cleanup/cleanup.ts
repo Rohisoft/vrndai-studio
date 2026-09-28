@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type { AppSettingsStore } from '../settings/app-settings-store.js';
 import type { JobStore } from '../store/job-store.js';
 import type { VideoStorage } from '../storage/video-storage.js';
@@ -42,7 +41,7 @@ export async function runCleanup(deps: CleanupDeps): Promise<void> {
 
   for (const job of [...expired, ...overLimit]) {
     if (job.videoPath) {
-      await deps.videoStorage.deleteVideo(path.basename(job.videoPath)).catch(() => {});
+      await deps.videoStorage.deleteVideo(job.videoPath).catch(() => {});
     }
     await deps.jobStore.delete(job.id);
   }

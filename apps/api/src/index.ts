@@ -27,7 +27,7 @@ import { createJobEventBus } from './sse/job-events.js';
 import { connectMongo } from './store/mongo-client.js';
 import { createMongoJobStore } from './store/mongo-job-store.js';
 import { seedSuperAdminIfNeeded } from './auth/users.js';
-import { createLocalVideoStorage } from './storage/local-video-storage.js';
+import { createVideoStorage } from './storage/index.js';
 import { createLocalImageCache } from './storage/local-image-cache.js';
 
 const env = parseEnv();
@@ -46,7 +46,7 @@ const webDistDir = fs.existsSync(webDistCandidate) ? webDistCandidate : undefine
 const db = await connectMongo(env.MONGODB_URI);
 await seedSuperAdminIfNeeded(db, env);
 const jobStore = await createMongoJobStore(db);
-const videoStorage = createLocalVideoStorage(path.join(dataDir, 'videos'));
+const videoStorage = createVideoStorage(env, dataDir);
 const imageCache = createLocalImageCache(path.join(dataDir, 'pending-uploads'));
 const eventBus = createJobEventBus();
 const appSettingsStore = createAppSettingsStore(dataDir);
