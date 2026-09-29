@@ -5,20 +5,31 @@ import { StatusBadge } from '../components/StatusBadge.js';
 import { VideoLightbox } from '../components/VideoLightbox.js';
 import { useAppConfig } from '../hooks/useAppConfig.js';
 import { useJobHistory } from '../hooks/useJobHistory.js';
+import { useMultiJobEvents } from '../hooks/useMultiJobEvents.js';
 import { api } from '../lib/api-client.js';
 import { formatDuration } from '../lib/format-duration.js';
 
 const PAGE_SIZE = 20;
 
 export function HistoryPage() {
-  const { jobs, loading, refresh } = useJobHistory();
+  const { jobs: fetchedJobs, loading, refresh } = useJobHistory();
   const { config } = useAppConfig();
   const [openId, setOpenId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [clearingFailed, setClearingFailed] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const navigate = useNavigate();
+
+  // useJobHistory only fetches once on mount -- without this, a job that's
+  // queued/running when this page loads shows a progress % that never
+  // moves again (looks stuck/broken) until the user manually refreshes the
+  // whole browser tab. Live-subscribes to whatever's currently busy and
+  // overlays those updates on top of the fetched list.
+  const busyIds = useMemo(() => fetchedJobs.filter((j) => j.status === 'queued' || j.status === 'running').map((j) => j.id), [fetchedJobs]);
+  const { jobsById: liveJobsById } = useMultiJobEvents(busyIds);
+  const jobs = useMemo(() => fetchedJobs.map((job) => liveJobsById[job.id] ?? job), [fetchedJobs, liveJobsById]);
 
   const openJob = jobs.find((job) => job.id === openId) ?? null;
   // Any finished clip (including combined reels, whose synthetic 'combined'
@@ -54,8 +65,13 @@ export function HistoryPage() {
   }
 
   async function handleCancel(id: string) {
-    await api.post(`/api/jobs/${id}/cancel`);
-    refresh();
+    setCancellingId(id);
+    try {
+      await api.post(`/api/jobs/${id}/cancel`);
+      refresh();
+    } finally {
+      setCancellingId(null);
+    }
   }
 
   async function handleRerun(id: string) {
@@ -180,9 +196,10 @@ export function HistoryPage() {
                           {busy ? (
                             <button
                               onClick={() => handleCancel(job.id)}
-                              className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950"
+                              disabled={cancellingId === job.id}
+                              className="rounded-lg border border-red-900 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950 disabled:opacity-40"
                             >
-                              Cancel
+                              {cancellingId === job.id ? 'Cancelling…' : 'Cancel'}
                             </button>
                           ) : (
                             <button

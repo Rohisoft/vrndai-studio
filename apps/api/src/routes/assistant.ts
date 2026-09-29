@@ -2,11 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { ChatMessage } from '../llm/types.js';
+import { generateContentIdeas } from '../assistant/idea-generator.js';
 import type { AppDeps } from '../app.js';
 
 const ChatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant']),
   content: z.string(),
+});
+
+const ContentIdeaSchema = z.object({
+  title: z.string(),
+  hook: z.string(),
+  prompt: z.string(),
 });
 
 // Streams a chat response from whichever LLM provider is configured
@@ -40,5 +47,19 @@ export function registerAssistantRoutes(app: FastifyInstance, deps: AppDeps): vo
         reply.raw.end();
       }
     }
+  );
+
+  // Structured, non-streaming -- a single JSON result, not a token stream,
+  // so this reuses the same llmClient.chat() + JSON-parse pattern as
+  // stock-video/search-terms.ts rather than the SSE hijack above.
+  server.post(
+    '/api/assistant/ideas',
+    {
+      schema: {
+        body: z.object({ niche: z.string().min(1), count: z.number().int().positive().max(10).optional() }),
+        response: { 200: z.array(ContentIdeaSchema) },
+      },
+    },
+    async (request) => generateContentIdeas({ llmClient: deps.llmClient, niche: request.body.niche, count: request.body.count })
   );
 }

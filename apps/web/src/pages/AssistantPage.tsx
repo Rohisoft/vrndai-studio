@@ -1,8 +1,15 @@
-import { ArrowRight, ArrowUp, MessageCircle, Plus } from 'lucide-react';
+import { ArrowRight, ArrowUp, Lightbulb, MessageCircle, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppConfig } from '../hooks/useAppConfig.js';
 import { useAssistantChat } from '../hooks/useAssistantChat.js';
+import { api } from '../lib/api-client.js';
+
+interface ContentIdea {
+  title: string;
+  hook: string;
+  prompt: string;
+}
 
 const SUGGESTIONS = [
   { title: 'Turn an idea into a prompt', description: 'Describe it loosely, get a detailed prompt' },
@@ -17,6 +24,10 @@ export function AssistantPage() {
   const [input, setInput] = useState('');
   const [draftPrompt, setDraftPrompt] = useState('');
   const [draftModelId, setDraftModelId] = useState('');
+  const [niche, setNiche] = useState('');
+  const [ideas, setIdeas] = useState<ContentIdea[]>([]);
+  const [loadingIdeas, setLoadingIdeas] = useState(false);
+  const [ideasError, setIdeasError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Keeps the draft panel in sync with whatever the assistant last said --
@@ -51,6 +62,26 @@ export function AssistantPage() {
 
   function useInCreate() {
     navigate('/', { state: { prefillPrompt: draftPrompt, continueFrom: undefined, prefillModelId: draftModelId || undefined } });
+  }
+
+  async function getIdeas(event: React.FormEvent) {
+    event.preventDefault();
+    if (!niche.trim() || loadingIdeas) {
+      return;
+    }
+    setLoadingIdeas(true);
+    setIdeasError(null);
+    try {
+      setIdeas(await api.post<ContentIdea[]>('/api/assistant/ideas', { niche: niche.trim() }));
+    } catch (err) {
+      setIdeasError(err instanceof Error ? err.message : 'Failed to generate ideas.');
+    } finally {
+      setLoadingIdeas(false);
+    }
+  }
+
+  function useIdea(idea: ContentIdea) {
+    setDraftPrompt(idea.prompt);
   }
 
   return (
@@ -108,7 +139,7 @@ export function AssistantPage() {
 
           {error && (
             <p className="rounded-lg border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
-              {error} -- make sure Ollama is running on your Mac (<code>ollama serve</code>).
+              {error} -- check your AI provider configuration (Settings, or the server's <code>LLM_PROVIDER</code> env var).
             </p>
           )}
         </div>
@@ -137,7 +168,48 @@ export function AssistantPage() {
       {/* Persistent prompt draft -- updates live as the assistant responds,
           freely editable, and carries both the text and a chosen model
           over to Create in one hand-off. */}
-      <div className="w-80 flex-none space-y-4 border-l border-neutral-800 bg-neutral-900 p-6">
+      <div className="w-80 flex-none space-y-4 overflow-y-auto border-l border-neutral-800 bg-neutral-900 p-6">
+        {/* Content ideas -- for the "I don't know what to make" moment,
+            not just "help me polish what I already have" (the chat below
+            it). Reuses the same draft panel as its hand-off target. */}
+        <div className="rounded-xl border border-neutral-700 bg-neutral-800 p-3 shadow-md shadow-black/30">
+          <div className="mb-2 flex items-center gap-1.5">
+            <Lightbulb className="h-3.5 w-3.5 text-amber-400" strokeWidth={2} />
+            <span className="text-sm font-semibold text-neutral-300">Content ideas</span>
+          </div>
+          <form onSubmit={getIdeas} className="flex gap-1.5">
+            <input
+              type="text"
+              value={niche}
+              onChange={(event) => setNiche(event.target.value)}
+              placeholder="A niche or topic…"
+              className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-2.5 py-1.5 text-xs placeholder:text-neutral-600 focus:border-neutral-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={loadingIdeas || !niche.trim()}
+              className="flex-none rounded-lg bg-gradient-to-r from-blue-600 to-violet-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            >
+              {loadingIdeas ? '…' : 'Get ideas'}
+            </button>
+          </form>
+          {ideasError && <p className="mt-2 text-xs text-red-400">{ideasError}</p>}
+          {ideas.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {ideas.map((idea, index) => (
+                <button
+                  key={index}
+                  onClick={() => useIdea(idea)}
+                  className="block w-full rounded-lg border border-neutral-700 bg-neutral-900 p-2 text-left hover:border-neutral-500"
+                >
+                  <p className="text-xs font-medium text-neutral-200">{idea.title}</p>
+                  <p className="mt-0.5 line-clamp-2 text-[11px] text-neutral-500">{idea.hook}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <span className="text-sm font-semibold text-neutral-300">Prompt draft</span>

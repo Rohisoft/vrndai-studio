@@ -10,7 +10,8 @@ export interface AssembleVideoOptions {
   clipTrimSeconds: number[];
   audioPath: string;
   audioDurationSeconds: number;
-  srtPath: string | null;
+  /** Path to an .ass subtitle file (see subtitles.ts's buildAss()) -- its own [V4+ Styles] section carries the look, no force_style override needed here. */
+  subtitlePath: string | null;
   targetWidth: number;
   targetHeight: number;
   targetFps: number;
@@ -25,7 +26,7 @@ export interface AssembleVideoOptions {
 // graph and -map list never reference any clip's audio stream, only the
 // separate TTS audio input.
 export async function assembleVideo(opts: AssembleVideoOptions): Promise<void> {
-  const { clipPaths, clipTrimSeconds, audioPath, audioDurationSeconds, srtPath, targetWidth, targetHeight, targetFps, outputPath } = opts;
+  const { clipPaths, clipTrimSeconds, audioPath, audioDurationSeconds, subtitlePath, targetWidth, targetHeight, targetFps, outputPath } = opts;
 
   const inputArgs = [...clipPaths.flatMap((p) => ['-i', p]), '-i', audioPath];
   const audioInputIndex = clipPaths.length;
@@ -52,12 +53,12 @@ export async function assembleVideo(opts: AssembleVideoOptions): Promise<void> {
 
   let videoLabel = 'vtrimmed';
   let subtitleStage = '';
-  if (srtPath) {
-    const escaped = srtPath.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
-    subtitleStage =
-      `;[vtrimmed]subtitles='${escaped}':force_style=` +
-      `'FontName=DejaVu Sans,FontSize=20,PrimaryColour=&H00FFFFFF,` +
-      `OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=60'[vsub]`;
+  if (subtitlePath) {
+    // No force_style override here -- the .ass file's own [V4+ Styles]
+    // section already carries the full look, including the karaoke
+    // highlight colors buildAss() sets up (see subtitles.ts).
+    const escaped = subtitlePath.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
+    subtitleStage = `;[vtrimmed]subtitles='${escaped}'[vsub]`;
     videoLabel = 'vsub';
   }
 

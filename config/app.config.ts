@@ -22,11 +22,13 @@ export const appConfig = {
   // default on the Generate form (see GenerateForm.tsx's initial useState).
   allowedDurationsSeconds: [10, 2, 3, 5, 8, 15, 30, 60] as const,
   allowedResolutions: [
+    // 720p Portrait first (default) -- 1080p has a documented OOM on the
+    // current RunPod GPU tier at longer durations (see RUNPOD_RUNBOOK.md).
+    { label: '720p Portrait', width: 720, height: 1280, aspectRatio: '9:16' },
     { label: '1080p Portrait', width: 1080, height: 1920, aspectRatio: '9:16' },
     { label: '1080p Landscape', width: 1920, height: 1080, aspectRatio: '16:9' },
     { label: '512p Square', width: 512, height: 512, aspectRatio: '1:1' },
     { label: '720p Landscape', width: 1280, height: 720, aspectRatio: '16:9' },
-    { label: '720p Portrait', width: 720, height: 1280, aspectRatio: '9:16' },
   ] satisfies ResolutionPreset[],
   allowedFps: [24, 16] as const,
   maxPromptLength: 20000,

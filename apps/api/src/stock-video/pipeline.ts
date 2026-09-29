@@ -6,7 +6,7 @@ import { generateScript } from './script-writer.js';
 import { generateSearchTerms } from './search-terms.js';
 import { downloadClip, pickVideoFile, searchClips, type PexelsVideo } from './pexels-client.js';
 import { synthesizeNarration } from './tts.js';
-import { buildSrt } from './subtitles.js';
+import { buildAss } from './subtitles.js';
 import { assembleVideo } from './assemble.js';
 import { createJobWorkDir } from './workdir.js';
 import type { StockVideoJobParams } from './types.js';
@@ -131,11 +131,11 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
       onEach: (i, n) => opts.onProgress?.(50 + Math.round((Math.min(i, n) / n) * 25), 'Downloading stock clips'),
     });
 
-    let srtPath: string | null = null;
+    let subtitlePath: string | null = null;
     if (params.subtitlesEnabled && narration.wordTimings.length > 0) {
       opts.onProgress?.(80, 'Building subtitles');
-      srtPath = path.join(workDir, 'subtitles.srt');
-      await fsp.writeFile(srtPath, buildSrt(narration.wordTimings), 'utf-8');
+      subtitlePath = path.join(workDir, 'subtitles.ass');
+      await fsp.writeFile(subtitlePath, buildAss(narration.wordTimings), 'utf-8');
     }
 
     opts.onProgress?.(90, 'Assembling final video');
@@ -145,7 +145,7 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
       clipTrimSeconds: clips.map((c) => c.useSeconds),
       audioPath: narration.audioPath,
       audioDurationSeconds: narration.durationSeconds,
-      srtPath,
+      subtitlePath,
       targetWidth: width,
       targetHeight: height,
       targetFps: 30,

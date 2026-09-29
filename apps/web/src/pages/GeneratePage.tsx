@@ -45,6 +45,21 @@ export function GeneratePage() {
   const { jobsById, connectionErrorsById } = useMultiJobEvents(activeJobIds);
   const { jobs: recentJobs, refresh: refreshRecent } = useJobHistory();
 
+  // Recovers any job still queued/running on the backend that this page
+  // isn't already watching -- e.g. the user navigated to History/My
+  // Creations and back (this page unmounts, losing activeJobIds entirely),
+  // or just refreshed the tab. Without this, a still-in-progress job
+  // silently disappears from the Preview/Queue panels even though it's
+  // still running server-side.
+  useEffect(() => {
+    const inFlightIds = recentJobs.filter((j) => j.status === 'queued' || j.status === 'running').map((j) => j.id);
+    if (inFlightIds.length === 0) return;
+    setActiveJobIds((ids) => {
+      const missing = inFlightIds.filter((id) => !ids.includes(id));
+      return missing.length > 0 ? [...ids, ...missing] : ids;
+    });
+  }, [recentJobs]);
+
   // "Open videos when they finish" (Settings > General) -- brings the
   // Preview panel into view the moment the most recent job completes,
   // rather than leaving the user to notice it on their own.
