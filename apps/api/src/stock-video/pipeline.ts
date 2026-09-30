@@ -38,11 +38,12 @@ async function useRealVoice(opts: { audioBytes: Buffer; audioExt: string; groqAp
   if (!opts.groqApiKey) {
     throw new Error('Real-voice narration needs GROQ_API_KEY set -- Whisper transcription (for word-timed captions) is only available via Groq.');
   }
-  const audioPath = path.join(opts.workDir, `narration${opts.audioExt || '.mp3'}`);
+  const ext = opts.audioExt || '.mp3';
+  const audioPath = path.join(opts.workDir, `narration${ext}`);
   await fsp.writeFile(audioPath, opts.audioBytes);
   const [durationSeconds, transcription] = await Promise.all([
     probeAudioDuration(audioPath),
-    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes: opts.audioBytes }),
+    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes: opts.audioBytes, filename: `narration${ext}` }),
   ]);
   return {
     narration: { audioPath, durationSeconds, wordTimings: transcription.wordTimings },
@@ -68,12 +69,13 @@ async function useClonedVoice(opts: {
   if (!opts.groqApiKey) {
     throw new Error('Voice cloning needs GROQ_API_KEY set -- Whisper transcription (for word-timed captions) is only available via Groq.');
   }
-  const audioBytes = await cloneVoiceAndSynthesize({ hfToken: opts.hfToken, sampleBytes: opts.sampleBytes, text: opts.script });
-  const audioPath = path.join(opts.workDir, 'narration-cloned.wav');
+  const { audioBytes, extension } = await cloneVoiceAndSynthesize({ hfToken: opts.hfToken, sampleBytes: opts.sampleBytes, text: opts.script });
+  const filename = `narration-cloned.${extension}`;
+  const audioPath = path.join(opts.workDir, filename);
   await fsp.writeFile(audioPath, audioBytes);
   const [durationSeconds, transcription] = await Promise.all([
     probeAudioDuration(audioPath),
-    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes }),
+    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes, filename }),
   ]);
   return { audioPath, durationSeconds, wordTimings: transcription.wordTimings };
 }

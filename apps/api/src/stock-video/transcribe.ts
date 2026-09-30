@@ -16,12 +16,17 @@ interface GroqTranscriptionResponse {
 // voice too. This is intentionally NOT part of the swappable LlmClient
 // interface -- Ollama/Gemini don't do word-level transcription the same
 // way, so this always needs a real Groq key regardless of LLM_PROVIDER.
-export async function transcribeAudio(opts: { groqApiKey: string; audioBytes: Buffer }): Promise<{
+export async function transcribeAudio(opts: { groqApiKey: string; audioBytes: Buffer; filename?: string }): Promise<{
   text: string;
   wordTimings: WordTiming[];
 }> {
   const form = new FormData();
-  form.append('file', new Blob([opts.audioBytes]), 'narration.audio');
+  // Groq's Whisper endpoint determines the audio format from the
+  // filename's extension in this multipart upload, not the bytes
+  // themselves -- a non-format extension (or none) gets rejected with
+  // "unsupported_audio_format" even though the actual audio is fine.
+  // Confirmed live: must be one of flac/mp3/mp4/mpeg/mpga/m4a/ogg/opus/wav/webm.
+  form.append('file', new Blob([opts.audioBytes]), opts.filename ?? 'narration.wav');
   form.append('model', 'whisper-large-v3');
   form.append('response_format', 'verbose_json');
   form.append('timestamp_granularities[]', 'word');
