@@ -1,7 +1,11 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
-import { serializerCompiler, validatorCompiler, type ZodTypeProvider } from 'fastify-type-provider-zod';
+import {
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod';
 import type { Db } from 'mongodb';
 import type { Env } from './config/env.js';
 import type { ComfyClient } from './comfy/types.js';
@@ -47,18 +51,25 @@ export interface AppDeps {
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: 'info', transport: { target: 'pino-pretty' } },
+    logger: {
+      level: 'info',
+      transport: {
+        target: 'pino-pretty',
+      },
+    },
+
+    connectionTimeout: 120000,
+    keepAliveTimeout: 120000,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  // 10MB was plenty for a reference image alone; bumped to 50MB now that
-  // this also covers real-voice narration uploads (routes/audio.ts) --
-  // several minutes of uncompressed WAV can exceed 10MB even though
-  // compressed formats (mp3/m4a/webm) rarely would. Still nowhere near a
-  // video upload's size, which this app never accepts directly.
-  await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
+  await app.register(multipart, {
+    limits: {
+      fileSize: 50 * 1024 * 1024,
+    },
+  });
 
   registerErrorHandler(app);
   await registerAuth(app, deps.env, deps.db);
@@ -74,19 +85,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerJobsStreamRoute(app, deps);
   registerVideoRoutes(app, deps);
 
-  // Single-service deployment (Render): this API also serves the built
-  // React SPA. /api/* keeps returning JSON 404s as before; every other
-  // unmatched GET falls back to index.html so React Router's client-side
-  // routes (e.g. /gallery, /history) work on a hard refresh or direct link,
-  // not just via in-app navigation.
   if (deps.webDistDir) {
-    await app.register(fastifyStatic, { root: deps.webDistDir });
+    await app.register(fastifyStatic, {
+      root: deps.webDistDir,
+    });
 
     app.setNotFoundHandler((request, reply) => {
       if (request.raw.url?.startsWith('/api/')) {
-        reply.status(404).send({ error: 'NotFound', message: `Route ${request.method}:${request.raw.url} not found.` });
+        reply.status(404).send({
+          error: 'NotFound',
+          message: `Route ${request.method}:${request.raw.url} not found.`,
+        });
         return;
       }
+
       reply.type('text/html').sendFile('index.html');
     });
   }
