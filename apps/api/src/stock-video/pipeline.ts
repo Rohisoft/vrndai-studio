@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { voices } from '../../../../config/voices.config.js';
 import { generateScript } from './script-writer.js';
 import { generateSearchTerms } from './search-terms.js';
@@ -51,6 +53,8 @@ async function useRealVoice(opts: { audioBytes: Buffer; audioExt: string; groqAp
   };
 }
 
+const execFileAsync = promisify(execFile);
+
 // A script still gets written/used here (unlike useRealVoice() -- the
 // sample is only a reference to clone FROM, not the narration itself).
 // The clone service returns only audio, no word timings, so those are
@@ -59,6 +63,7 @@ async function useRealVoice(opts: { audioBytes: Buffer; audioExt: string; groqAp
 async function useClonedVoice(opts: {
   sampleBytes: Buffer;
   script: string;
+  language: 'en' | 'hi';
   hfToken: string | undefined;
   groqApiKey: string | undefined;
   workDir: string;
@@ -69,7 +74,25 @@ async function useClonedVoice(opts: {
   if (!opts.groqApiKey) {
     throw new Error('Voice cloning needs GROQ_API_KEY set -- Whisper transcription (for word-timed captions) is only available via Groq.');
   }
-  const { audioBytes, extension } = await cloneVoiceAndSynthesize({ hfToken: opts.hfToken, sampleBytes: opts.sampleBytes, text: opts.script });
+
+  // The clone Space always decodes the reference audio it downloads AS
+  // WAV, regardless of the source URL's (extension-less) path -- an MP3
+  // upload (e.g. from msedge-tts's own output format) fails server-side
+  // with a decode error even though the bytes are perfectly valid audio.
+  // Confirmed live. Re-encoding to real WAV here, before it ever reaches
+  // the Space, sidesteps that entirely.
+  const rawSamplePath = path.join(opts.workDir, 'clone-sample-raw');
+  const wavSamplePath = path.join(opts.workDir, 'clone-sample.wav');
+  await fsp.writeFile(rawSamplePath, opts.sampleBytes);
+  await execFileAsync('ffmpeg', ['-y', '-i', rawSamplePath, '-ar', '24000', '-ac', '1', wavSamplePath]);
+  const wavSampleBytes = await fsp.readFile(wavSamplePath);
+
+  const { audioBytes, extension } = await cloneVoiceAndSynthesize({
+    hfToken: opts.hfToken,
+    sampleBytes: wavSampleBytes,
+    text: opts.script,
+    language: opts.language,
+  });
   const filename = `narration-cloned.${extension}`;
   const audioPath = path.join(opts.workDir, filename);
   await fsp.writeFile(audioPath, audioBytes);
@@ -193,6 +216,7 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
         narration = await useClonedVoice({
           sampleBytes: params.voiceCloneSampleBytes,
           script,
+          language,
           hfToken: opts.hfToken,
           groqApiKey: opts.groqApiKey,
           workDir,

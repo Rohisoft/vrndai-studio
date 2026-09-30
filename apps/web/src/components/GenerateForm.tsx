@@ -492,17 +492,15 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
                 {cloneSampleUploadError && <p className="text-xs text-red-400">{cloneSampleUploadError}</p>}
                 {voiceCloneSample && !uploadingCloneSample && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
                 <p className="text-[11px] text-neutral-600">
-                  A short clip (a few seconds to a minute) of a real voice. The script above gets spoken in that voice --
-                  this uses a free, less predictable third-party service, so results can vary.
+                  A short clip (a few seconds to a minute) of a real voice. The script above gets spoken in that voice, via a
+                  free XTTS-v2 model -- a free third-party service, so occasional slowness or downtime is possible.
                 </p>
               </div>
             ) : null}
 
             {(narrationMode === 'ai' || narrationMode === 'clone') && (
               <div>
-                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  {narrationMode === 'clone' ? 'Script language' : 'Voice language'}
-                </label>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice language</label>
                 <div className="flex gap-1.5">
                   {(['en', 'hi'] as const).map((language) => (
                     <button
@@ -521,8 +519,7 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
                 </div>
                 {narrationMode === 'clone' && (
                   <p className="mt-1.5 text-[11px] text-neutral-600">
-                    Controls what language the script is written in -- whether the cloned voice actually pronounces it well
-                    depends on the underlying model, unverified for Hindi.
+                    Sets both the script's language and the clone model's language setting.
                   </p>
                 )}
               </div>
