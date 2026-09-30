@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmClient } from './types.js';
+import type { ChatMessage, LlmClient, ToolCallResult, ToolDefinition } from './types.js';
 
 // Talks to Ollama's native /api/chat endpoint (verified live against a real
 // running instance -- not guessed): POST {model, messages, stream: true}
@@ -86,5 +86,43 @@ export function createOllamaClient(options: { baseUrl: string; model: string }):
     return data.message?.content ?? '';
   }
 
-  return { chat, streamChat };
+  // Ollama's tool calling (model-dependent -- only works with tool-capable
+  // models, verify against whatever OLLAMA_MODEL is actually configured
+  // rather than assuming) takes the same {type:'function', function:{...}}
+  // shape Groq does, but a response's tool_calls[].function.arguments
+  // comes back as an already-parsed object, not a JSON string.
+  async function chatWithTools(messages: ChatMessage[], tools: ToolDefinition[]): Promise<ToolCallResult> {
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: options.model,
+          messages,
+          stream: false,
+          tools: tools.map((tool) => ({ type: 'function', function: tool })),
+        }),
+      });
+    } catch (err) {
+      throw new Error(`Could not reach Ollama at ${baseUrl}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      throw new Error(`Ollama /api/chat request failed (${res.status}): ${await res.text().catch(() => '')}`);
+    }
+    const data = (await res.json()) as {
+      message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }> };
+      error?: string;
+    };
+    if (data.error) {
+      throw new Error(`Ollama error: ${data.error}`);
+    }
+    const toolCall = data.message?.tool_calls?.[0];
+    if (toolCall) {
+      return { type: 'tool_call', name: toolCall.function.name, arguments: toolCall.function.arguments };
+    }
+    return { type: 'text', content: data.message?.content ?? '' };
+  }
+
+  return { chat, streamChat, chatWithTools };
 }

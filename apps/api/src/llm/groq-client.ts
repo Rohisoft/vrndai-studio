@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmClient } from './types.js';
+import type { ChatMessage, LlmClient, ToolCallResult, ToolDefinition } from './types.js';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -76,5 +76,43 @@ export function createGroqClient(options: { apiKey: string; model: string }): Ll
     }
   }
 
-  return { chat, streamChat };
+  // Groq's tool calling is OpenAI-compatible: {type:'function', function:
+  // {name, description, parameters}} per tool, and a tool-calling response
+  // comes back as choices[0].message.tool_calls[0].function -- with
+  // `arguments` as a JSON STRING (needs parsing), not an object like
+  // Gemini/Ollama return it.
+  async function chatWithTools(messages: ChatMessage[], tools: ToolDefinition[]): Promise<ToolCallResult> {
+    let res: Response;
+    try {
+      res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: options.model,
+          messages,
+          stream: false,
+          tools: tools.map((tool) => ({ type: 'function', function: tool })),
+        }),
+      });
+    } catch (err) {
+      throw new Error(`Could not reach Groq: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      throw new Error(`Groq request failed (${res.status}): ${await res.text().catch(() => '')}`);
+    }
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ function: { name: string; arguments: string } }> } }>;
+      error?: { message?: string };
+    };
+    if (data.error) {
+      throw new Error(`Groq error: ${data.error.message ?? 'unknown error'}`);
+    }
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall) {
+      return { type: 'tool_call', name: toolCall.function.name, arguments: JSON.parse(toolCall.function.arguments) };
+    }
+    return { type: 'text', content: data.choices?.[0]?.message?.content ?? '' };
+  }
+
+  return { chat, streamChat, chatWithTools };
 }

@@ -14,6 +14,7 @@ function createMisconfiguredClient(message: string): LlmClient {
   return {
     chat: () => Promise.reject(new Error(message)),
     streamChat: () => Promise.reject(new Error(message)),
+    chatWithTools: () => Promise.reject(new Error(message)),
   };
 }
 

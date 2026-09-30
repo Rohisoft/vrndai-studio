@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmClient } from './types.js';
+import type { ChatMessage, LlmClient, ToolCallResult, ToolDefinition } from './types.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -94,5 +94,42 @@ export function createGeminiClient(options: { apiKey: string; model: string }): 
     }
   }
 
-  return { chat, streamChat };
+  // Gemini's tool calling uses `tools: [{functionDeclarations: [...]}]`,
+  // and a tool-calling response part comes back as
+  // `{functionCall: {name, args}}` -- `args` is already a real object
+  // (unlike Groq, which returns a JSON string that needs parsing).
+  async function chatWithTools(messages: ChatMessage[], tools: ToolDefinition[]): Promise<ToolCallResult> {
+    const url = `${GEMINI_BASE}/${options.model}:generateContent?key=${options.apiKey}`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...splitMessages(messages),
+          tools: [{ functionDeclarations: tools }],
+        }),
+      });
+    } catch (err) {
+      throw new Error(`Could not reach Gemini: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!res.ok) {
+      throw new Error(`Gemini request failed (${res.status}): ${await res.text().catch(() => '')}`);
+    }
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> } }> } }>;
+      error?: { message?: string };
+    };
+    if (data.error) {
+      throw new Error(`Gemini error: ${data.error.message ?? 'unknown error'}`);
+    }
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const functionCall = parts.find((p) => p.functionCall)?.functionCall;
+    if (functionCall) {
+      return { type: 'tool_call', name: functionCall.name, arguments: functionCall.args };
+    }
+    return { type: 'text', content: parts.map((p) => p.text ?? '').join('') };
+  }
+
+  return { chat, streamChat, chatWithTools };
 }
