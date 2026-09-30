@@ -496,43 +496,53 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
                   this uses a free, less predictable third-party service, so results can vary.
                 </p>
               </div>
-            ) : (
-              <>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice language</label>
-                  <div className="flex gap-1.5">
-                    {(['en', 'hi'] as const).map((language) => (
-                      <button
-                        key={language}
-                        type="button"
-                        onClick={() => changeVoiceLanguage(language)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                          voiceLanguage === language
-                            ? 'border-white bg-white text-black'
-                            : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
-                        }`}
-                      >
-                        {language === 'en' ? 'English' : 'Hindi'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            ) : null}
 
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice</label>
-                  <select
-                    value={voiceId}
-                    onChange={(event) => setVoiceId(event.target.value)}
-                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm text-neutral-300 focus:border-neutral-500 focus:outline-none"
-                  >
-                    {voicesForLanguage.map((voice) => (
-                      <option key={voice.id} value={voice.id}>
-                        {voice.label} ({voice.gender === 'female' ? 'Female' : 'Male'})
-                      </option>
-                    ))}
-                  </select>
+            {(narrationMode === 'ai' || narrationMode === 'clone') && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  {narrationMode === 'clone' ? 'Script language' : 'Voice language'}
+                </label>
+                <div className="flex gap-1.5">
+                  {(['en', 'hi'] as const).map((language) => (
+                    <button
+                      key={language}
+                      type="button"
+                      onClick={() => changeVoiceLanguage(language)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        voiceLanguage === language
+                          ? 'border-white bg-white text-black'
+                          : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                      }`}
+                    >
+                      {language === 'en' ? 'English' : 'Hindi'}
+                    </button>
+                  ))}
                 </div>
-              </>
+                {narrationMode === 'clone' && (
+                  <p className="mt-1.5 text-[11px] text-neutral-600">
+                    Controls what language the script is written in -- whether the cloned voice actually pronounces it well
+                    depends on the underlying model, unverified for Hindi.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {narrationMode === 'ai' && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice</label>
+                <select
+                  value={voiceId}
+                  onChange={(event) => setVoiceId(event.target.value)}
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm text-neutral-300 focus:border-neutral-500 focus:outline-none"
+                >
+                  {voicesForLanguage.map((voice) => (
+                    <option key={voice.id} value={voice.id}>
+                      {voice.label} ({voice.gender === 'female' ? 'Female' : 'Male'})
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <div className="grid grid-cols-2 gap-4">
