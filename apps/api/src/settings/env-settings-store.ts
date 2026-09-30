@@ -49,9 +49,15 @@ export function createEnvSettingsStore(currentEnv: Env) {
       GEMINI_API_KEY: existing.GEMINI_API_KEY ?? '',
       GEMINI_MODEL: existing.GEMINI_MODEL ?? '',
       PEXELS_API_KEY: existing.PEXELS_API_KEY ?? '',
+      HF_TOKEN: existing.HF_TOKEN ?? '',
       MONGODB_URI: existing.MONGODB_URI ?? '',
       ADMIN_USERNAME: existing.ADMIN_USERNAME ?? '',
       ADMIN_PASSWORD: existing.ADMIN_PASSWORD ?? '',
+      VIDEO_STORAGE_PROVIDER: existing.VIDEO_STORAGE_PROVIDER ?? '',
+      GOOGLE_DRIVE_CLIENT_ID: existing.GOOGLE_DRIVE_CLIENT_ID ?? '',
+      GOOGLE_DRIVE_CLIENT_SECRET: existing.GOOGLE_DRIVE_CLIENT_SECRET ?? '',
+      GOOGLE_DRIVE_REFRESH_TOKEN: existing.GOOGLE_DRIVE_REFRESH_TOKEN ?? '',
+      GOOGLE_DRIVE_FOLDER_ID: existing.GOOGLE_DRIVE_FOLDER_ID ?? '',
     });
   }
 

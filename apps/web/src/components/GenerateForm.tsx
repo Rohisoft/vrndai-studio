@@ -52,11 +52,15 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
   const [stockClipDuration, setStockClipDuration] = useState(STOCK_CLIP_DURATIONS[1]);
   const [targetLengthParagraphs, setTargetLengthParagraphs] = useState(TARGET_LENGTHS[1].paragraphs);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
-  const [narrationMode, setNarrationMode] = useState<'ai' | 'own'>('ai');
+  const [narrationMode, setNarrationMode] = useState<'ai' | 'own' | 'clone'>('ai');
   const [narrationAudio, setNarrationAudio] = useState<string | null>(null);
   const [narrationAudioFileName, setNarrationAudioFileName] = useState<string | null>(null);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const [voiceCloneSample, setVoiceCloneSample] = useState<string | null>(null);
+  const [voiceCloneSampleFileName, setVoiceCloneSampleFileName] = useState<string | null>(null);
+  const [uploadingCloneSample, setUploadingCloneSample] = useState(false);
+  const [cloneSampleUploadError, setCloneSampleUploadError] = useState<string | null>(null);
 
   // Only relevant when the user manually switches to an image-to-video
   // model outside the "Continue clip" flow (initialSourceImage unset) --
@@ -155,6 +159,31 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
     }
   }
 
+  async function handleVoiceCloneSampleSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setVoiceCloneSample(null);
+    setVoiceCloneSampleFileName(file.name);
+    setCloneSampleUploadError(null);
+    setUploadingCloneSample(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      // Same generic upload endpoint the "My own voice" mode uses -- the
+      // response's field name (narrationAudio) is just this route's fixed
+      // shape, the returned reference works the same regardless of which
+      // narration mode uses it afterward.
+      const result = await api.postForm<{ narrationAudio: string }>('/api/audio/upload', formData);
+      setVoiceCloneSample(result.narrationAudio);
+    } catch (err) {
+      setCloneSampleUploadError(err instanceof Error ? err.message : 'Failed to upload voice sample.');
+    } finally {
+      setUploadingCloneSample(false);
+    }
+  }
+
   function addChip(chip: string) {
     setPrompt((current) => (current.trim() ? `${current.trim()}, ${chip}` : chip));
   }
@@ -169,6 +198,7 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
           script: script || undefined,
           voiceId,
           narrationAudio: narrationMode === 'own' ? (narrationAudio ?? undefined) : undefined,
+          voiceCloneSample: narrationMode === 'clone' ? (voiceCloneSample ?? undefined) : undefined,
           aspectRatio: orientation,
           stockClipDurationSeconds: stockClipDuration,
           scriptParagraphs: targetLengthParagraphs,
@@ -388,10 +418,21 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
                 >
                   <Mic className="h-3 w-3" strokeWidth={2} /> My own voice
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setNarrationMode('clone')}
+                  className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    narrationMode === 'clone'
+                      ? 'border-white bg-white text-black'
+                      : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                  }`}
+                >
+                  <Mic className="h-3 w-3" strokeWidth={2} /> Clone my voice
+                </button>
               </div>
             </div>
 
-            {narrationMode === 'ai' && (
+            {(narrationMode === 'ai' || narrationMode === 'clone') && (
               <div>
                 <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
                   Script (optional)
@@ -428,6 +469,31 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
                 {narrationAudio && !uploadingAudio && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
                 <p className="text-[11px] text-neutral-600">
                   Captions and stock clips are matched from your recording automatically -- no script needed.
+                </p>
+              </div>
+            ) : narrationMode === 'clone' ? (
+              <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                  <Mic className="h-3.5 w-3.5" strokeWidth={2} /> Voice sample to clone
+                </label>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex flex-none cursor-pointer items-center rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800">
+                    Choose file
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/webm,audio/ogg"
+                      onChange={handleVoiceCloneSampleSelected}
+                      className="sr-only"
+                    />
+                  </label>
+                  <span className="truncate text-xs text-neutral-500">{voiceCloneSampleFileName ?? 'No file chosen'}</span>
+                </div>
+                {uploadingCloneSample && <p className="text-xs text-neutral-500">Uploading…</p>}
+                {cloneSampleUploadError && <p className="text-xs text-red-400">{cloneSampleUploadError}</p>}
+                {voiceCloneSample && !uploadingCloneSample && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
+                <p className="text-[11px] text-neutral-600">
+                  A short clip (a few seconds to a minute) of a real voice. The script above gets spoken in that voice --
+                  this uses a free, less predictable third-party service, so results can vary.
                 </p>
               </div>
             ) : (
@@ -568,15 +634,32 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
         <button
           type="submit"
           disabled={
-            disabled || uploading || uploadingAudio || !prompt.trim() || (isStockFootage && narrationMode === 'own' && !narrationAudio)
+            disabled ||
+            uploading ||
+            uploadingAudio ||
+            uploadingCloneSample ||
+            !prompt.trim() ||
+            (isStockFootage && narrationMode === 'own' && !narrationAudio) ||
+            (isStockFootage && narrationMode === 'clone' && !voiceCloneSample)
           }
           className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {disabled ? 'Generating…' : uploading ? 'Uploading image…' : uploadingAudio ? 'Uploading voice…' : 'Generate video'}
+          {disabled
+            ? 'Generating…'
+            : uploading
+              ? 'Uploading image…'
+              : uploadingAudio
+                ? 'Uploading voice…'
+                : uploadingCloneSample
+                  ? 'Uploading sample…'
+                  : 'Generate video'}
         </button>
         {!prompt.trim() && <p className="mt-2 text-center text-xs text-neutral-600">Write a prompt to enable Generate.</p>}
         {isStockFootage && narrationMode === 'own' && !narrationAudio && prompt.trim() && (
           <p className="mt-2 text-center text-xs text-neutral-600">Upload your voice recording to enable Generate.</p>
+        )}
+        {isStockFootage && narrationMode === 'clone' && !voiceCloneSample && prompt.trim() && (
+          <p className="mt-2 text-center text-xs text-neutral-600">Upload a voice sample to clone to enable Generate.</p>
         )}
       </div>
     </form>

@@ -14,6 +14,8 @@ export interface StockVideoJobParams {
   narrationAudioBytes?: Buffer;
   /** The uploaded file's original extension (e.g. ".mp3") -- written back out with the same extension so ffmpeg's format detection has a real hint to go on. */
   narrationAudioExt?: string;
+  /** Already-resolved bytes of a SHORT voice sample to clone (see routes/audio.ts + worker.ts's buildStockVideoParams()) -- unlike narrationAudioBytes, this is not the narration itself: script-writing still happens, and the script gets synthesized in this cloned voice (see voice-clone-client.ts, pipeline.ts). */
+  voiceCloneSampleBytes?: Buffer;
   aspect: '16:9' | '9:16';
   clipDurationSeconds: number;
   subtitlesEnabled: boolean;

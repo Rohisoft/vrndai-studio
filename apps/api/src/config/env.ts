@@ -59,6 +59,12 @@ const EnvSchema = z.object({
   // here -- the real key lives only in the gitignored .env, same as
   // RUNPOD_API_KEY/COMFYUI_AUTH_TOKEN above.
   PEXELS_API_KEY: z.string().optional(),
+  // Voice cloning for Stock Footage narration -- calls the tonyassi/
+  // voice-clone Hugging Face Space via @gradio/client (see stock-video/
+  // voice-clone-client.ts). A free community Space, not a stable paid API
+  // -- deliberately kept swappable for a real provider (e.g. ElevenLabs)
+  // once/if this proves worth relying on long-term.
+  HF_TOKEN: z.string().optional(),
   // Where generated videos are stored -- 'local' writes to DATA_DIR/videos
   // (fine for local dev / a host with a persistent disk), 'google-drive'
   // uploads to a Google account's Drive instead, so videos survive on a

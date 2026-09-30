@@ -7,6 +7,7 @@ import { generateSearchTerms } from './search-terms.js';
 import { downloadClip, pickVideoFile, searchClips, type PexelsVideo } from './pexels-client.js';
 import { probeAudioDuration, synthesizeNarration, type NarrationResult } from './tts.js';
 import { transcribeAudio } from './transcribe.js';
+import { cloneVoiceAndSynthesize } from './voice-clone-client.js';
 import { buildAss } from './subtitles.js';
 import { assembleVideo } from './assemble.js';
 import { createJobWorkDir } from './workdir.js';
@@ -18,6 +19,8 @@ export interface StockVideoPipelineOptions {
   llmClient: LlmClient;
   /** Only needed when a job actually uses real-voice narration (see useRealVoice() below) -- unrelated to LLM_PROVIDER, since word-level transcription isn't something Ollama/Gemini do here. */
   groqApiKey?: string;
+  /** Only needed for "Clone my voice" narration (see useClonedVoice() below) -- a free Hugging Face Space, see voice-clone-client.ts's comment on why this is kept isolated to one file. */
+  hfToken?: string;
   onProgress?: (value: number, label: string) => void;
   signal?: AbortSignal;
 }
@@ -45,6 +48,34 @@ async function useRealVoice(opts: { audioBytes: Buffer; audioExt: string; groqAp
     narration: { audioPath, durationSeconds, wordTimings: transcription.wordTimings },
     transcript: transcription.text,
   };
+}
+
+// A script still gets written/used here (unlike useRealVoice() -- the
+// sample is only a reference to clone FROM, not the narration itself).
+// The clone service returns only audio, no word timings, so those are
+// recovered the same way useRealVoice() does: transcribe the result via
+// Groq Whisper.
+async function useClonedVoice(opts: {
+  sampleBytes: Buffer;
+  script: string;
+  hfToken: string | undefined;
+  groqApiKey: string | undefined;
+  workDir: string;
+}): Promise<NarrationResult> {
+  if (!opts.hfToken) {
+    throw new Error('Voice cloning needs HF_TOKEN set -- see voice-clone-client.ts.');
+  }
+  if (!opts.groqApiKey) {
+    throw new Error('Voice cloning needs GROQ_API_KEY set -- Whisper transcription (for word-timed captions) is only available via Groq.');
+  }
+  const audioBytes = await cloneVoiceAndSynthesize({ hfToken: opts.hfToken, sampleBytes: opts.sampleBytes, text: opts.script });
+  const audioPath = path.join(opts.workDir, 'narration-cloned.wav');
+  await fsp.writeFile(audioPath, audioBytes);
+  const [durationSeconds, transcription] = await Promise.all([
+    probeAudioDuration(audioPath),
+    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes }),
+  ]);
+  return { audioPath, durationSeconds, wordTimings: transcription.wordTimings };
 }
 
 const MAX_CLIPS = 40;
@@ -155,8 +186,19 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
       }
       searchTermsScript = script;
 
-      opts.onProgress?.(35, 'Synthesizing narration');
-      narration = await synthesizeNarration({ text: script, voiceName: params.voiceName, workDir });
+      if (params.voiceCloneSampleBytes) {
+        opts.onProgress?.(35, 'Cloning your voice');
+        narration = await useClonedVoice({
+          sampleBytes: params.voiceCloneSampleBytes,
+          script,
+          hfToken: opts.hfToken,
+          groqApiKey: opts.groqApiKey,
+          workDir,
+        });
+      } else {
+        opts.onProgress?.(35, 'Synthesizing narration');
+        narration = await synthesizeNarration({ text: script, voiceName: params.voiceName, workDir });
+      }
     }
 
     opts.onProgress?.(20, 'Picking search terms');

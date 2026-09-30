@@ -27,6 +27,12 @@ export const GenerationRequestSchema = z.object({
   // user's own recorded voice instead of TTS -- when set, voiceId/script
   // auto-writing are skipped entirely (see stock-video/pipeline.ts).
   narrationAudio: z.string().optional(),
+  // Uploaded filename of a SHORT voice sample to clone -- unlike
+  // narrationAudio (the full narration itself), this is a reference clip
+  // that gets synthesized speaking the script (auto-written or supplied),
+  // same as the AI-voice path but with a cloned voice instead of a fixed
+  // TTS one. See stock-video/voice-clone-client.ts.
+  voiceCloneSample: z.string().optional(),
   stockClipDurationSeconds: z.number().positive().max(30).optional(),
   subtitlesEnabled: z.boolean().optional(),
   // How many paragraphs to write for an auto-generated script (1-10) -- the
