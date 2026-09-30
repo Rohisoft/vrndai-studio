@@ -9,6 +9,14 @@ const booleanFromEnv = z
 const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   DATA_DIR: z.string().default('./data'),
+  // Signs the login cookie (plugins/auth.ts). Required on any host without
+  // a persistent disk (e.g. Render free tier) -- without it, the fallback
+  // file-based secret regenerates on every container restart, silently
+  // invalidating every existing session (confirmed live: this is what
+  // frequent, seemingly-random 401s in production turned out to be).
+  // Optional here since local dev's bind-mounted data dir persists fine
+  // without it -- generate one with `openssl rand -hex 32` for production.
+  AUTH_SECRET: z.string().optional(),
   COMFYUI_BASE_URL: z.string().url().default('http://127.0.0.1:8188'),
   COMFYUI_AUTH_TOKEN: z.string().optional(),
   COMFYUI_MOCK: booleanFromEnv,

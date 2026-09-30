@@ -36,6 +36,7 @@ export function createEnvSettingsStore(currentEnv: Env) {
       COMFYUI_MOCK: String(input.comfyuiMock),
       PORT: String(input.port),
       DATA_DIR: input.dataDir,
+      AUTH_SECRET: existing.AUTH_SECRET ?? '',
       // Not yet exposed in the settings UI (set directly in .env) -- always
       // preserved so an unrelated save from this UI can't silently wipe
       // RunPod Serverless / MongoDB / admin / LLM configuration.

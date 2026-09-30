@@ -20,7 +20,18 @@ const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 // boundary is /api/*, which every data fetch goes through.
 const PUBLIC_API_PATHS = new Set(['/api/auth/login', '/api/auth/status']);
 
-function loadOrCreateAuthSecret(dataDir: string): string {
+// AUTH_SECRET (env var) takes priority when set -- required on a host with
+// no persistent disk (e.g. Render free tier): without it, the fallback
+// file-based secret gets regenerated on every container restart, which
+// silently invalidates every existing login cookie and shows up as
+// frequent, seemingly-random 401s (confirmed live in production -- this
+// was happening on every free-tier spin-down/redeploy). The file fallback
+// stays useful for local dev, where the bind-mounted data dir genuinely
+// persists across restarts.
+function loadOrCreateAuthSecret(dataDir: string, envSecret: string | undefined): string {
+  if (envSecret) {
+    return envSecret;
+  }
   const secretPath = path.join(dataDir, '.auth-secret');
   try {
     return fs.readFileSync(secretPath, 'utf-8').trim();
@@ -40,7 +51,7 @@ function loadOrCreateAuthSecret(dataDir: string): string {
 // signature on each request, no DB round-trip per request, same
 // performance characteristic as the old static "authenticated" string.
 export async function registerAuth(app: FastifyInstance, env: Env, db: Db): Promise<void> {
-  const secret = loadOrCreateAuthSecret(env.DATA_DIR);
+  const secret = loadOrCreateAuthSecret(env.DATA_DIR, env.AUTH_SECRET);
 
   await app.register(cookie, { secret });
 
