@@ -19,6 +19,7 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerConfigRoutes } from './routes/config.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerAssistantRoutes } from './routes/assistant.js';
+import { registerAudioRoutes } from './routes/audio.js';
 import { registerGenerateRoute } from './routes/generate.js';
 import { registerImagesRoutes } from './routes/images.js';
 import { registerJobsRoutes } from './routes/jobs.js';
@@ -52,9 +53,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  // 10MB is plenty for a reference image -- this is only ever a single
-  // photo, not a video upload.
-  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  // 10MB was plenty for a reference image alone; bumped to 50MB now that
+  // this also covers real-voice narration uploads (routes/audio.ts) --
+  // several minutes of uncompressed WAV can exceed 10MB even though
+  // compressed formats (mp3/m4a/webm) rarely would. Still nowhere near a
+  // video upload's size, which this app never accepts directly.
+  await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
 
   registerErrorHandler(app);
   await registerAuth(app, deps.env, deps.db);
@@ -65,6 +69,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   registerAssistantRoutes(app, deps);
   registerGenerateRoute(app, deps);
   registerImagesRoutes(app, deps);
+  registerAudioRoutes(app, deps);
   registerJobsRoutes(app, deps);
   registerJobsStreamRoute(app, deps);
   registerVideoRoutes(app, deps);

@@ -50,7 +50,7 @@ function parseWordTimings(raw: string): WordTiming[] {
   }));
 }
 
-async function probeAudioDuration(filePath: string): Promise<number> {
+export async function probeAudioDuration(filePath: string): Promise<number> {
   const { stdout } = await execFileAsync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath]);
   return parseFloat(stdout.trim());
 }

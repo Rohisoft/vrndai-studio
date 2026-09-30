@@ -26,7 +26,7 @@ interface PendingJob {
 // queue/worker.ts's existing submit/poll/fetch dispatch code works
 // unchanged; submitWorkflow kicks the pipeline off immediately and
 // onProgress/waitForCompletion just observe its progress.
-export function createStockVideoClient(options: { pexelsApiKey: string; llmClient: LlmClient }): ComfyClient {
+export function createStockVideoClient(options: { pexelsApiKey: string; llmClient: LlmClient; groqApiKey?: string }): ComfyClient {
   const pendingJobs = new Map<string, PendingJob>();
 
   async function healthCheck(): Promise<boolean> {
@@ -62,6 +62,7 @@ export function createStockVideoClient(options: { pexelsApiKey: string; llmClien
     void runStockVideoPipeline(params, {
       pexelsApiKey: options.pexelsApiKey,
       llmClient: options.llmClient,
+      groqApiKey: options.groqApiKey,
       signal: abortController.signal,
       onProgress: (value) => {
         for (const callback of job.progressCallbacks) {

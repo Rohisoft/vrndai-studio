@@ -1,4 +1,4 @@
-import { ChevronDown, Clapperboard, Image as ImageIcon, SlidersHorizontal, Volume2 } from 'lucide-react';
+import { ChevronDown, Clapperboard, Image as ImageIcon, Mic, SlidersHorizontal, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { GenerationRequestSchema, type PublicAppConfig } from '@app/shared';
 import { api } from '../lib/api-client.js';
@@ -52,6 +52,11 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
   const [stockClipDuration, setStockClipDuration] = useState(STOCK_CLIP_DURATIONS[1]);
   const [targetLengthParagraphs, setTargetLengthParagraphs] = useState(TARGET_LENGTHS[1].paragraphs);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
+  const [narrationMode, setNarrationMode] = useState<'ai' | 'own'>('ai');
+  const [narrationAudio, setNarrationAudio] = useState<string | null>(null);
+  const [narrationAudioFileName, setNarrationAudioFileName] = useState<string | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
 
   // Only relevant when the user manually switches to an image-to-video
   // model outside the "Continue clip" flow (initialSourceImage unset) --
@@ -129,6 +134,27 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
     }
   }
 
+  async function handleAudioFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    setNarrationAudio(null);
+    setNarrationAudioFileName(file.name);
+    setAudioUploadError(null);
+    setUploadingAudio(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const result = await api.postForm<{ narrationAudio: string }>('/api/audio/upload', formData);
+      setNarrationAudio(result.narrationAudio);
+    } catch (err) {
+      setAudioUploadError(err instanceof Error ? err.message : 'Failed to upload audio.');
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
   function addChip(chip: string) {
     setPrompt((current) => (current.trim() ? `${current.trim()}, ${chip}` : chip));
   }
@@ -142,6 +168,7 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
           prompt, // doubles as the video's subject/topic for this engine
           script: script || undefined,
           voiceId,
+          narrationAudio: narrationMode === 'own' ? (narrationAudio ?? undefined) : undefined,
           aspectRatio: orientation,
           stockClipDurationSeconds: stockClipDuration,
           scriptParagraphs: targetLengthParagraphs,
@@ -337,52 +364,110 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
         {isStockFootage && (
           <div className="space-y-4 border-t border-neutral-800 pt-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
-                Script (optional)
-              </label>
-              <textarea
-                value={script}
-                onChange={(event) => setScript(event.target.value)}
-                rows={4}
-                placeholder="Leave blank to have a script written from the topic above, or write your own narration here."
-                className="w-full resize-none rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm placeholder:text-neutral-600 focus:border-neutral-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice language</label>
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Narration</label>
               <div className="flex gap-1.5">
-                {(['en', 'hi'] as const).map((language) => (
-                  <button
-                    key={language}
-                    type="button"
-                    onClick={() => changeVoiceLanguage(language)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      voiceLanguage === language
-                        ? 'border-white bg-white text-black'
-                        : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
-                    }`}
-                  >
-                    {language === 'en' ? 'English' : 'Hindi'}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => setNarrationMode('ai')}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    narrationMode === 'ai'
+                      ? 'border-white bg-white text-black'
+                      : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                  }`}
+                >
+                  AI voice
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNarrationMode('own')}
+                  className={`flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    narrationMode === 'own'
+                      ? 'border-white bg-white text-black'
+                      : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                  }`}
+                >
+                  <Mic className="h-3 w-3" strokeWidth={2} /> My own voice
+                </button>
               </div>
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice</label>
-              <select
-                value={voiceId}
-                onChange={(event) => setVoiceId(event.target.value)}
-                className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm text-neutral-300 focus:border-neutral-500 focus:outline-none"
-              >
-                {voicesForLanguage.map((voice) => (
-                  <option key={voice.id} value={voice.id}>
-                    {voice.label} ({voice.gender === 'female' ? 'Female' : 'Male'})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {narrationMode === 'ai' && (
+              <div>
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  Script (optional)
+                </label>
+                <textarea
+                  value={script}
+                  onChange={(event) => setScript(event.target.value)}
+                  rows={4}
+                  placeholder="Leave blank to have a script written from the topic above, or write your own narration here."
+                  className="w-full resize-none rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3 text-sm placeholder:text-neutral-600 focus:border-neutral-500 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {narrationMode === 'own' ? (
+              <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+                  <Mic className="h-3.5 w-3.5" strokeWidth={2} /> Your voice recording
+                </label>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex flex-none cursor-pointer items-center rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800">
+                    Choose file
+                    <input
+                      type="file"
+                      accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/webm,audio/ogg"
+                      onChange={handleAudioFileSelected}
+                      className="sr-only"
+                    />
+                  </label>
+                  <span className="truncate text-xs text-neutral-500">{narrationAudioFileName ?? 'No file chosen'}</span>
+                </div>
+                {uploadingAudio && <p className="text-xs text-neutral-500">Uploading…</p>}
+                {audioUploadError && <p className="text-xs text-red-400">{audioUploadError}</p>}
+                {narrationAudio && !uploadingAudio && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
+                <p className="text-[11px] text-neutral-600">
+                  Captions and stock clips are matched from your recording automatically -- no script needed.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice language</label>
+                  <div className="flex gap-1.5">
+                    {(['en', 'hi'] as const).map((language) => (
+                      <button
+                        key={language}
+                        type="button"
+                        onClick={() => changeVoiceLanguage(language)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          voiceLanguage === language
+                            ? 'border-white bg-white text-black'
+                            : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+                        }`}
+                      >
+                        {language === 'en' ? 'English' : 'Hindi'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">Voice</label>
+                  <select
+                    value={voiceId}
+                    onChange={(event) => setVoiceId(event.target.value)}
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm text-neutral-300 focus:border-neutral-500 focus:outline-none"
+                  >
+                    {voicesForLanguage.map((voice) => (
+                      <option key={voice.id} value={voice.id}>
+                        {voice.label} ({voice.gender === 'female' ? 'Female' : 'Male'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <PillGroup
@@ -482,12 +567,17 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
       <div className="border-t border-neutral-800 p-6">
         <button
           type="submit"
-          disabled={disabled || uploading || !prompt.trim()}
+          disabled={
+            disabled || uploading || uploadingAudio || !prompt.trim() || (isStockFootage && narrationMode === 'own' && !narrationAudio)
+          }
           className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-violet-600 px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {disabled ? 'Generating…' : uploading ? 'Uploading image…' : 'Generate video'}
+          {disabled ? 'Generating…' : uploading ? 'Uploading image…' : uploadingAudio ? 'Uploading voice…' : 'Generate video'}
         </button>
         {!prompt.trim() && <p className="mt-2 text-center text-xs text-neutral-600">Write a prompt to enable Generate.</p>}
+        {isStockFootage && narrationMode === 'own' && !narrationAudio && prompt.trim() && (
+          <p className="mt-2 text-center text-xs text-neutral-600">Upload your voice recording to enable Generate.</p>
+        )}
       </div>
     </form>
   );

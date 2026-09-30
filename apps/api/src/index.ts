@@ -56,6 +56,7 @@ const llmClient = createLlmClient(env);
 const stockVideoClient = createStockVideoClient({
   pexelsApiKey: env.PEXELS_API_KEY ?? '',
   llmClient,
+  groqApiKey: env.GROQ_API_KEY,
 });
 
 const workerDeps: WorkerDeps = {

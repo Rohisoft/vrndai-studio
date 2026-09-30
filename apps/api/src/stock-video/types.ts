@@ -8,8 +8,12 @@ export interface StockVideoJobParams {
   /** The video's subject/topic -- also what gets a script written from it when `script` is omitted. */
   subject: string;
   script?: string;
-  /** edge-tts voice name WITH the "-Female"/"-Male" suffix, e.g. "hi-IN-SwaraNeural-Female" -- see config/voices.config.ts. Stripped before being passed to msedge-tts. */
+  /** edge-tts voice name WITH the "-Female"/"-Male" suffix, e.g. "hi-IN-SwaraNeural-Female" -- see config/voices.config.ts. Stripped before being passed to msedge-tts. Ignored when narrationAudioBytes is set. */
   voiceName: string;
+  /** Already-resolved bytes of a user-uploaded voice recording (see routes/audio.ts + worker.ts's buildStockVideoParams()) -- when set, this replaces TTS entirely: no script auto-writing, no msedge-tts synthesis, narration and its word timings come from transcribing this instead (see pipeline.ts, transcribe.ts). */
+  narrationAudioBytes?: Buffer;
+  /** The uploaded file's original extension (e.g. ".mp3") -- written back out with the same extension so ffmpeg's format detection has a real hint to go on. */
+  narrationAudioExt?: string;
   aspect: '16:9' | '9:16';
   clipDurationSeconds: number;
   subtitlesEnabled: boolean;

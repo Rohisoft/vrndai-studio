@@ -23,6 +23,10 @@ export const GenerationRequestSchema = z.object({
   // subject via Ollama -- see apps/api/src/stock-video/script-writer.ts).
   script: z.string().max(20000).optional(),
   voiceId: z.string().optional(), // e.g. "hi-IN-SwaraNeural-Female" -- see config/voices.config.ts
+  // Uploaded filename (see POST /api/audio/upload) for narrating with the
+  // user's own recorded voice instead of TTS -- when set, voiceId/script
+  // auto-writing are skipped entirely (see stock-video/pipeline.ts).
+  narrationAudio: z.string().optional(),
   stockClipDurationSeconds: z.number().positive().max(30).optional(),
   subtitlesEnabled: z.boolean().optional(),
   // How many paragraphs to write for an auto-generated script (1-10) -- the

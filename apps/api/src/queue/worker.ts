@@ -28,11 +28,19 @@ export interface WorkerDeps {
 // just its job params, shaped for StockVideoClient.submitWorkflow() to read
 // back out (see stock-video/stock-video-client.ts's comment on why it still
 // goes through the same ComfyClient-shaped call).
-function buildStockVideoParams(params: GenerationRequest): StockVideoJobParams {
+//
+// Async because narrationAudio (a real-voice upload) needs its bytes
+// resolved from the cache here -- same "resolve a reference filename to
+// bytes at the point of use" pattern this file already uses for
+// jobRow.params.sourceImage below, just for the stock-video branch instead
+// of the ComfyUI one.
+async function buildStockVideoParams(params: GenerationRequest, imageCache: ImageCache): Promise<StockVideoJobParams> {
   return {
     subject: params.prompt,
     script: params.script,
     voiceName: params.voiceId ?? 'en-US-JennyNeural-Female',
+    narrationAudioBytes: params.narrationAudio ? await imageCache.readImage(params.narrationAudio) : undefined,
+    narrationAudioExt: params.narrationAudio ? path.extname(params.narrationAudio) : undefined,
     aspect: params.aspectRatio === '16:9' ? '16:9' : '9:16',
     clipDurationSeconds: params.stockClipDurationSeconds ?? 4,
     subtitlesEnabled: params.subtitlesEnabled ?? true,
@@ -88,7 +96,7 @@ export async function processJob(jobRow: JobRow, deps: WorkerDeps): Promise<void
     let images: ComfyImageInput[] | undefined;
 
     if (modelConfig.engine === 'stock-video') {
-      graph = buildStockVideoParams(jobRow.params) as unknown as Record<string, unknown>;
+      graph = (await buildStockVideoParams(jobRow.params, deps.imageCache)) as unknown as Record<string, unknown>;
     } else {
       const workflowFile =
         jobRow.params.sourceImage && modelConfig.workflowFileImageToVideo

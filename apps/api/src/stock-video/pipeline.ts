@@ -5,7 +5,8 @@ import { voices } from '../../../../config/voices.config.js';
 import { generateScript } from './script-writer.js';
 import { generateSearchTerms } from './search-terms.js';
 import { downloadClip, pickVideoFile, searchClips, type PexelsVideo } from './pexels-client.js';
-import { synthesizeNarration } from './tts.js';
+import { probeAudioDuration, synthesizeNarration, type NarrationResult } from './tts.js';
+import { transcribeAudio } from './transcribe.js';
 import { buildAss } from './subtitles.js';
 import { assembleVideo } from './assemble.js';
 import { createJobWorkDir } from './workdir.js';
@@ -15,8 +16,35 @@ import type { LlmClient } from '../llm/types.js';
 export interface StockVideoPipelineOptions {
   pexelsApiKey: string;
   llmClient: LlmClient;
+  /** Only needed when a job actually uses real-voice narration (see useRealVoice() below) -- unrelated to LLM_PROVIDER, since word-level transcription isn't something Ollama/Gemini do here. */
+  groqApiKey?: string;
   onProgress?: (value: number, label: string) => void;
   signal?: AbortSignal;
+}
+
+// Produces the same NarrationResult shape synthesizeNarration() does, from
+// an uploaded recording instead of TTS -- everything downstream (clip
+// gathering, buildAss()'s captions, assembleVideo()) stays identical either
+// way. The transcript doubles as the "script" text for generateSearchTerms()
+// below -- more accurate stock-clip matching than a guessed script, since
+// it's what was actually said.
+async function useRealVoice(opts: { audioBytes: Buffer; audioExt: string; groqApiKey: string | undefined; workDir: string }): Promise<{
+  narration: NarrationResult;
+  transcript: string;
+}> {
+  if (!opts.groqApiKey) {
+    throw new Error('Real-voice narration needs GROQ_API_KEY set -- Whisper transcription (for word-timed captions) is only available via Groq.');
+  }
+  const audioPath = path.join(opts.workDir, `narration${opts.audioExt || '.mp3'}`);
+  await fsp.writeFile(audioPath, opts.audioBytes);
+  const [durationSeconds, transcription] = await Promise.all([
+    probeAudioDuration(audioPath),
+    transcribeAudio({ groqApiKey: opts.groqApiKey, audioBytes: opts.audioBytes }),
+  ]);
+  return {
+    narration: { audioPath, durationSeconds, wordTimings: transcription.wordTimings },
+    transcript: transcription.text,
+  };
 }
 
 const MAX_CLIPS = 40;
@@ -94,27 +122,45 @@ async function gatherClips(
 export async function runStockVideoPipeline(params: StockVideoJobParams, opts: StockVideoPipelineOptions): Promise<Buffer> {
   const { dir: workDir, cleanup } = await createJobWorkDir(randomUUID());
   try {
-    const voice = voices.find((v) => v.id === params.voiceName);
-    const language: 'hi' | 'en' = voice?.language ?? (params.voiceName.startsWith('hi-') ? 'hi' : 'en');
+    let narration: NarrationResult;
+    let searchTermsScript: string;
 
-    opts.onProgress?.(5, 'Writing script');
-    const script =
-      params.script?.trim() ||
-      (await generateScript({
-        llmClient: opts.llmClient,
-        subject: params.subject,
-        paragraphs: params.scriptParagraphs,
-        language,
-      }));
-    if (!script) {
-      throw new Error('Failed to produce a narration script.');
+    if (params.narrationAudioBytes) {
+      // Real voice: no script to write, no TTS to run -- the upload IS the
+      // narration, transcribed for its word timings and search-term text.
+      opts.onProgress?.(10, 'Transcribing your voice');
+      const result = await useRealVoice({
+        audioBytes: params.narrationAudioBytes,
+        audioExt: params.narrationAudioExt || '.mp3',
+        groqApiKey: opts.groqApiKey,
+        workDir,
+      });
+      narration = result.narration;
+      searchTermsScript = result.transcript;
+    } else {
+      const voice = voices.find((v) => v.id === params.voiceName);
+      const language: 'hi' | 'en' = voice?.language ?? (params.voiceName.startsWith('hi-') ? 'hi' : 'en');
+
+      opts.onProgress?.(5, 'Writing script');
+      const script =
+        params.script?.trim() ||
+        (await generateScript({
+          llmClient: opts.llmClient,
+          subject: params.subject,
+          paragraphs: params.scriptParagraphs,
+          language,
+        }));
+      if (!script) {
+        throw new Error('Failed to produce a narration script.');
+      }
+      searchTermsScript = script;
+
+      opts.onProgress?.(35, 'Synthesizing narration');
+      narration = await synthesizeNarration({ text: script, voiceName: params.voiceName, workDir });
     }
 
     opts.onProgress?.(20, 'Picking search terms');
-    const terms = await generateSearchTerms({ llmClient: opts.llmClient, script, subject: params.subject });
-
-    opts.onProgress?.(35, 'Synthesizing narration');
-    const narration = await synthesizeNarration({ text: script, voiceName: params.voiceName, workDir });
+    const terms = await generateSearchTerms({ llmClient: opts.llmClient, script: searchTermsScript, subject: params.subject });
 
     opts.onProgress?.(50, 'Downloading stock clips');
     const { width, height } = params.aspect === '16:9' ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 };
