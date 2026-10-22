@@ -18,7 +18,7 @@
     "fastify-type-provider-zod": "^2.1.0",
     "google-auth-library": "^9.15.1",
     "mongodb": "^6.21.0",
-    "msedge-tts": "^2.0.8",
+    "msedge-tts": "^2.1.0",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
