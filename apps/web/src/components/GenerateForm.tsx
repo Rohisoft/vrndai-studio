@@ -1,5 +1,5 @@
 import { ChevronDown, Clapperboard, Image as ImageIcon, Mic, SlidersHorizontal, Volume2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GenerationRequestSchema, type PublicAppConfig } from '@app/shared';
 import { api } from '../lib/api-client.js';
 
@@ -54,13 +54,11 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
   const [narrationMode, setNarrationMode] = useState<'ai' | 'own' | 'clone'>('ai');
   const [narrationAudio, setNarrationAudio] = useState<string | null>(null);
-  const [narrationAudioFileName, setNarrationAudioFileName] = useState<string | null>(null);
-  const [uploadingAudio, setUploadingAudio] = useState(false);
-  const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const [narrationAudioUploading, setNarrationAudioUploading] = useState(false);
   const [voiceCloneSample, setVoiceCloneSample] = useState<string | null>(null);
-  const [voiceCloneSampleFileName, setVoiceCloneSampleFileName] = useState<string | null>(null);
-  const [uploadingCloneSample, setUploadingCloneSample] = useState(false);
-  const [cloneSampleUploadError, setCloneSampleUploadError] = useState<string | null>(null);
+  const [voiceCloneSampleUploading, setVoiceCloneSampleUploading] = useState(false);
+  const [backgroundMusic, setBackgroundMusic] = useState<string | null>(null);
+  const [backgroundMusicUploading, setBackgroundMusicUploading] = useState(false);
 
   // Only relevant when the user manually switches to an image-to-video
   // model outside the "Continue clip" flow (initialSourceImage unset) --
@@ -138,51 +136,6 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
     }
   }
 
-  async function handleAudioFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    setNarrationAudio(null);
-    setNarrationAudioFileName(file.name);
-    setAudioUploadError(null);
-    setUploadingAudio(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await api.postForm<{ narrationAudio: string }>('/api/audio/upload', formData);
-      setNarrationAudio(result.narrationAudio);
-    } catch (err) {
-      setAudioUploadError(err instanceof Error ? err.message : 'Failed to upload audio.');
-    } finally {
-      setUploadingAudio(false);
-    }
-  }
-
-  async function handleVoiceCloneSampleSelected(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    setVoiceCloneSample(null);
-    setVoiceCloneSampleFileName(file.name);
-    setCloneSampleUploadError(null);
-    setUploadingCloneSample(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // Same generic upload endpoint the "My own voice" mode uses -- the
-      // response's field name (narrationAudio) is just this route's fixed
-      // shape, the returned reference works the same regardless of which
-      // narration mode uses it afterward.
-      const result = await api.postForm<{ narrationAudio: string }>('/api/audio/upload', formData);
-      setVoiceCloneSample(result.narrationAudio);
-    } catch (err) {
-      setCloneSampleUploadError(err instanceof Error ? err.message : 'Failed to upload voice sample.');
-    } finally {
-      setUploadingCloneSample(false);
-    }
-  }
 
   function addChip(chip: string) {
     setPrompt((current) => (current.trim() ? `${current.trim()}, ${chip}` : chip));
@@ -199,6 +152,7 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
           voiceId,
           narrationAudio: narrationMode === 'own' ? (narrationAudio ?? undefined) : undefined,
           voiceCloneSample: narrationMode === 'clone' ? (voiceCloneSample ?? undefined) : undefined,
+          backgroundMusic: backgroundMusic ?? undefined,
           aspectRatio: orientation,
           stockClipDurationSeconds: stockClipDuration,
           scriptParagraphs: targetLengthParagraphs,
@@ -448,54 +402,24 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
             )}
 
             {narrationMode === 'own' ? (
-              <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
-                  <Mic className="h-3.5 w-3.5" strokeWidth={2} /> Your voice recording
-                </label>
-                <div className="flex items-center gap-2">
-                  <label className="inline-flex flex-none cursor-pointer items-center rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800">
-                    Choose file
-                    <input
-                      type="file"
-                      accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/webm,audio/ogg"
-                      onChange={handleAudioFileSelected}
-                      className="sr-only"
-                    />
-                  </label>
-                  <span className="truncate text-xs text-neutral-500">{narrationAudioFileName ?? 'No file chosen'}</span>
-                </div>
-                {uploadingAudio && <p className="text-xs text-neutral-500">Uploading…</p>}
-                {audioUploadError && <p className="text-xs text-red-400">{audioUploadError}</p>}
-                {narrationAudio && !uploadingAudio && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
-                <p className="text-[11px] text-neutral-600">
-                  Captions and stock clips are matched from your recording automatically -- no script needed.
-                </p>
-              </div>
+              <AudioUploadField
+                value={narrationAudio}
+                onChange={setNarrationAudio}
+                onUploadingChange={setNarrationAudioUploading}
+                allowRecording
+                label="Your voice recording"
+                hint="Captions and stock clips are matched from your recording automatically -- no script needed."
+              />
             ) : narrationMode === 'clone' ? (
-              <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
-                <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
-                  <Mic className="h-3.5 w-3.5" strokeWidth={2} /> Voice sample to clone
-                </label>
-                <div className="flex items-center gap-2">
-                  <label className="inline-flex flex-none cursor-pointer items-center rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800">
-                    Choose file
-                    <input
-                      type="file"
-                      accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/webm,audio/ogg"
-                      onChange={handleVoiceCloneSampleSelected}
-                      className="sr-only"
-                    />
-                  </label>
-                  <span className="truncate text-xs text-neutral-500">{voiceCloneSampleFileName ?? 'No file chosen'}</span>
-                </div>
-                {uploadingCloneSample && <p className="text-xs text-neutral-500">Uploading…</p>}
-                {cloneSampleUploadError && <p className="text-xs text-red-400">{cloneSampleUploadError}</p>}
-                {voiceCloneSample && !uploadingCloneSample && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
-                <p className="text-[11px] text-neutral-600">
-                  A short clip (a few seconds to a minute) of a real voice. The script above gets spoken in that voice, via a
-                  free XTTS-v2 model -- a free third-party service, so occasional slowness or downtime is possible.
-                </p>
-              </div>
+              <AudioUploadField
+                value={voiceCloneSample}
+                onChange={setVoiceCloneSample}
+                onUploadingChange={setVoiceCloneSampleUploading}
+                allowRecording
+                label="Voice sample to clone"
+                hint="A short clip (a few seconds to a minute) of a real voice. The script above gets spoken in that voice, via a
+                  free XTTS-v2 model -- a free third-party service, so occasional slowness or downtime is possible."
+              />
             ) : null}
 
             {(narrationMode === 'ai' || narrationMode === 'clone') && (
@@ -581,6 +505,14 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
               />
               Burn in subtitles
             </label>
+
+            <AudioUploadField
+              value={backgroundMusic}
+              onChange={setBackgroundMusic}
+              onUploadingChange={setBackgroundMusicUploading}
+              label="Background music (optional)"
+              hint="Mixed in under the narration at a lower volume, looped or trimmed to match its length."
+            />
           </div>
         )}
       </div>
@@ -643,8 +575,9 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
           disabled={
             disabled ||
             uploading ||
-            uploadingAudio ||
-            uploadingCloneSample ||
+            narrationAudioUploading ||
+            voiceCloneSampleUploading ||
+            backgroundMusicUploading ||
             !prompt.trim() ||
             (isStockFootage && narrationMode === 'own' && !narrationAudio) ||
             (isStockFootage && narrationMode === 'clone' && !voiceCloneSample)
@@ -655,11 +588,13 @@ export function GenerateForm({ config, disabled, onSubmit, initialModelId, initi
             ? 'Generating…'
             : uploading
               ? 'Uploading image…'
-              : uploadingAudio
+              : narrationAudioUploading
                 ? 'Uploading voice…'
-                : uploadingCloneSample
+                : voiceCloneSampleUploading
                   ? 'Uploading sample…'
-                  : 'Generate video'}
+                  : backgroundMusicUploading
+                    ? 'Uploading music…'
+                    : 'Generate video'}
         </button>
         {!prompt.trim() && <p className="mt-2 text-center text-xs text-neutral-600">Write a prompt to enable Generate.</p>}
         {isStockFootage && narrationMode === 'own' && !narrationAudio && prompt.trim() && (
@@ -699,6 +634,184 @@ function PillGroup<T extends string | number>({ label, options, value, onChange,
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+interface AudioUploadFieldProps {
+  value: string | null;
+  onChange: (filename: string | null) => void;
+  onUploadingChange?: (uploading: boolean) => void;
+  /** Mic recording only makes sense for voice narration, not a background music track. */
+  allowRecording?: boolean;
+  label: string;
+  hint?: string;
+}
+
+// Shared by "My own voice", "Clone my voice", and background music -- same
+// upload-a-filename-reference flow (POST /api/audio/upload) either way, the
+// recording UI is the only part specific to voice narration (allowRecording).
+function AudioUploadField({ value, onChange, onUploadingChange, allowRecording, label, hint }: AudioUploadFieldProps) {
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [recordedPreviewUrl, setRecordedPreviewUrl] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recordedPreviewUrl) {
+        URL.revokeObjectURL(recordedPreviewUrl);
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function uploadBlob(blob: Blob, name: string) {
+    onChange(null);
+    setFileName(name);
+    setError(null);
+    setUploading(true);
+    onUploadingChange?.(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', blob, name);
+      const result = await api.postForm<{ narrationAudio: string }>('/api/audio/upload', formData);
+      onChange(result.narrationAudio);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload audio.');
+    } finally {
+      setUploading(false);
+      onUploadingChange?.(false);
+    }
+  }
+
+  function handleFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    void uploadBlob(file, file.name);
+  }
+
+  async function startRecording() {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        setRecordedBlob(blob);
+        setRecordedPreviewUrl(URL.createObjectURL(blob));
+      };
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setRecording(true);
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    } catch {
+      setError('Microphone access denied or unavailable.');
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+  }
+
+  function discardRecording() {
+    if (recordedPreviewUrl) {
+      URL.revokeObjectURL(recordedPreviewUrl);
+    }
+    setRecordedBlob(null);
+    setRecordedPreviewUrl(null);
+  }
+
+  function useRecording() {
+    if (!recordedBlob) {
+      return;
+    }
+    void uploadBlob(recordedBlob, `recording-${Date.now()}.webm`);
+    discardRecording();
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+      <label className="flex items-center gap-1.5 text-xs font-medium text-neutral-300">
+        <Mic className="h-3.5 w-3.5" strokeWidth={2} /> {label}
+      </label>
+      {!recording && !recordedBlob && (
+        <div className="flex items-center gap-2">
+          <label className="inline-flex flex-none cursor-pointer items-center rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:bg-neutral-800">
+            Choose file
+            <input
+              type="file"
+              accept="audio/mpeg,audio/mp4,audio/wav,audio/x-wav,audio/webm,audio/ogg"
+              onChange={handleFileSelected}
+              className="sr-only"
+            />
+          </label>
+          {allowRecording && (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="inline-flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-900 px-2.5 py-1.5 text-xs font-medium text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800"
+            >
+              <Mic className="h-3 w-3" strokeWidth={2} /> Record
+            </button>
+          )}
+          <span className="truncate text-xs text-neutral-500">{fileName ?? 'No file chosen'}</span>
+        </div>
+      )}
+      {recording && (
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5 text-xs text-red-400">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Recording… {elapsedSeconds}s
+          </span>
+          <button type="button" onClick={stopRecording} className="rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800">
+            Stop
+          </button>
+        </div>
+      )}
+      {recordedBlob && recordedPreviewUrl && (
+        <div className="space-y-2">
+          <audio src={recordedPreviewUrl} controls className="w-full" />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={useRecording}
+              className="rounded-md bg-gradient-to-r from-blue-600 to-violet-600 px-3 py-1.5 text-xs font-medium text-white"
+            >
+              Use this recording
+            </button>
+            <button type="button" onClick={discardRecording} className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-800">
+              Re-record
+            </button>
+          </div>
+        </div>
+      )}
+      {uploading && <p className="text-xs text-neutral-500">Uploading…</p>}
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {value && !uploading && !recordedBlob && <p className="text-xs text-emerald-400">Uploaded -- ready to use.</p>}
+      {hint && <p className="text-[11px] text-neutral-600">{hint}</p>}
     </div>
   );
 }

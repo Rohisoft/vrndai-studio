@@ -12,6 +12,8 @@ export interface AssembleVideoOptions {
   audioDurationSeconds: number;
   /** Path to an .ass subtitle file (see subtitles.ts's buildAss()) -- its own [V4+ Styles] section carries the look, no force_style override needed here. */
   subtitlePath: string | null;
+  /** Path to a user-uploaded music track to mix in under the narration -- looped (it's very unlikely to already be exactly the narration's length) and volume-lowered so it sits clearly under the voice, not competing with it. */
+  musicPath: string | null;
   targetWidth: number;
   targetHeight: number;
   targetFps: number;
@@ -26,10 +28,19 @@ export interface AssembleVideoOptions {
 // graph and -map list never reference any clip's audio stream, only the
 // separate TTS audio input.
 export async function assembleVideo(opts: AssembleVideoOptions): Promise<void> {
-  const { clipPaths, clipTrimSeconds, audioPath, audioDurationSeconds, subtitlePath, targetWidth, targetHeight, targetFps, outputPath } = opts;
+  const { clipPaths, clipTrimSeconds, audioPath, audioDurationSeconds, subtitlePath, musicPath, targetWidth, targetHeight, targetFps, outputPath } =
+    opts;
 
   const inputArgs = [...clipPaths.flatMap((p) => ['-i', p]), '-i', audioPath];
   const audioInputIndex = clipPaths.length;
+  // -stream_loop -1 is an input-specific flag (must sit immediately before
+  // the -i it applies to) -- only the music track loops, never the clips
+  // or narration, since those are each exactly the length they need to be
+  // already.
+  const musicInputIndex = audioInputIndex + 1;
+  if (musicPath) {
+    inputArgs.push('-stream_loop', '-1', '-i', musicPath);
+  }
 
   // scale with force_original_aspect_ratio=increase + crop = fill the frame
   // edge-to-edge (not letterbox pad) -- b-roll should look like real
@@ -62,7 +73,18 @@ export async function assembleVideo(opts: AssembleVideoOptions): Promise<void> {
     videoLabel = 'vsub';
   }
 
-  const filterComplex = `${perClipFilters};${concatStage};${trimStage}${subtitleStage}`;
+  // Music volume is a fixed, conservative default -- this is meant to sit
+  // clearly under the voiceover, not compete with it. duration=first caps
+  // the mixed output to the narration's actual length, not the looped
+  // (effectively infinite) music input's length.
+  let audioLabel = `${audioInputIndex}:a`;
+  let audioStage = '';
+  if (musicPath) {
+    audioStage = `;[${musicInputIndex}:a]volume=0.18[bgvol];[${audioInputIndex}:a][bgvol]amix=inputs=2:duration=first:dropout_transition=0[aout]`;
+    audioLabel = '[aout]';
+  }
+
+  const filterComplex = `${perClipFilters};${concatStage};${trimStage}${subtitleStage}${audioStage}`;
 
   await execFileAsync(
     'ffmpeg',
@@ -74,7 +96,7 @@ export async function assembleVideo(opts: AssembleVideoOptions): Promise<void> {
       '-map',
       `[${videoLabel}]`,
       '-map',
-      `${audioInputIndex}:a`,
+      audioLabel,
       '-c:v',
       'libx264',
       '-pix_fmt',

@@ -252,6 +252,12 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
       await fsp.writeFile(subtitlePath, buildAss(narration.wordTimings), 'utf-8');
     }
 
+    let musicPath: string | null = null;
+    if (params.backgroundMusicBytes) {
+      musicPath = path.join(workDir, 'background-music');
+      await fsp.writeFile(musicPath, params.backgroundMusicBytes);
+    }
+
     opts.onProgress?.(90, 'Assembling final video');
     const outputPath = path.join(workDir, 'output.mp4');
     await assembleVideo({
@@ -260,6 +266,7 @@ export async function runStockVideoPipeline(params: StockVideoJobParams, opts: S
       audioPath: narration.audioPath,
       audioDurationSeconds: narration.durationSeconds,
       subtitlePath,
+      musicPath,
       targetWidth: width,
       targetHeight: height,
       targetFps: 30,

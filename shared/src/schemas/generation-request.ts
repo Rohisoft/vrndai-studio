@@ -33,6 +33,10 @@ export const GenerationRequestSchema = z.object({
   // same as the AI-voice path but with a cloned voice instead of a fixed
   // TTS one. See stock-video/voice-clone-client.ts.
   voiceCloneSample: z.string().optional(),
+  // Uploaded filename of a music track to mix in under the narration,
+  // looped/trimmed to match its length (see stock-video/assemble.ts).
+  // Independent of which narration mode is used.
+  backgroundMusic: z.string().optional(),
   stockClipDurationSeconds: z.number().positive().max(30).optional(),
   subtitlesEnabled: z.boolean().optional(),
   // How many paragraphs to write for an auto-generated script (1-10) -- the

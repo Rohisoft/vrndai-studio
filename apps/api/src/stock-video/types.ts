@@ -16,6 +16,8 @@ export interface StockVideoJobParams {
   narrationAudioExt?: string;
   /** Already-resolved bytes of a SHORT voice sample to clone (see routes/audio.ts + worker.ts's buildStockVideoParams()) -- unlike narrationAudioBytes, this is not the narration itself: script-writing still happens, and the script gets synthesized in this cloned voice (see voice-clone-client.ts, pipeline.ts). */
   voiceCloneSampleBytes?: Buffer;
+  /** Already-resolved bytes of a user-uploaded background music track (see routes/audio.ts + worker.ts's buildStockVideoParams()) -- mixed in under the narration at a fixed lower volume, independent of which narration mode produced the voice track (see assemble.ts). */
+  backgroundMusicBytes?: Buffer;
   aspect: '16:9' | '9:16';
   clipDurationSeconds: number;
   subtitlesEnabled: boolean;

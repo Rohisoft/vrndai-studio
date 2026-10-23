@@ -42,6 +42,7 @@ async function buildStockVideoParams(params: GenerationRequest, imageCache: Imag
     narrationAudioBytes: params.narrationAudio ? await imageCache.readImage(params.narrationAudio) : undefined,
     narrationAudioExt: params.narrationAudio ? path.extname(params.narrationAudio) : undefined,
     voiceCloneSampleBytes: params.voiceCloneSample ? await imageCache.readImage(params.voiceCloneSample) : undefined,
+    backgroundMusicBytes: params.backgroundMusic ? await imageCache.readImage(params.backgroundMusic) : undefined,
     aspect: params.aspectRatio === '16:9' ? '16:9' : '9:16',
     clipDurationSeconds: params.stockClipDurationSeconds ?? 4,
     subtitlesEnabled: params.subtitlesEnabled ?? true,
